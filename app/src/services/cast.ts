@@ -1,4 +1,5 @@
 import { DeviceEventEmitter, NativeModules } from 'react-native';
+import { diagnosticErrorDetails, normalizeNativeDiagnosticCode, recordCastDiagnostic } from './diagnosticReport';
 
 export type NativeCastPlaybackState =
   | 'idle'
@@ -19,6 +20,7 @@ export type NativeCastStatus = {
   canSeek: boolean;
   idleReason?: string;
   errorCode?: string;
+  nativeErrorCode?: string;
 };
 
 export type NativeCastCapabilities = {
@@ -178,6 +180,8 @@ export function normalizeNativeCastStatus(
   const errorCode = boundedStatusString(value.errorCode, MAX_STATUS_CODE_LENGTH);
   if (idleReason) status.idleReason = idleReason;
   if (errorCode) status.errorCode = errorCode;
+  const nativeErrorCode = normalizeNativeDiagnosticCode(value.nativeErrorCode);
+  if (nativeErrorCode) status.nativeErrorCode = nativeErrorCode;
   return status;
 }
 
@@ -236,7 +240,14 @@ export async function loadCastMedia(
   metadata: CastLoadMetadata,
   startTimeSec: number,
 ): Promise<void> {
-  await ensureModule().loadProxiedMedia(source, metadata, startTimeSec);
+  recordCastDiagnostic('load/start', `type=${source.contentType ?? 'auto'} tracks=${source.tracks?.length ?? 0}`);
+  try {
+    await ensureModule().loadProxiedMedia(source, metadata, startTimeSec);
+    recordCastDiagnostic('load/accepted');
+  } catch (error) {
+    recordCastDiagnostic('load/failed', diagnosticErrorDetails(error, 'CAST_LOAD_REJECTED'));
+    throw error;
+  }
 }
 
 export async function getCastStatus(
@@ -246,6 +257,7 @@ export async function getCastStatus(
     await ensureModule().getStatus(refresh),
   );
   if (!normalized) throw new Error('CAST_STATUS_INVALID');
+  recordCastStatus(normalized);
   return normalized;
 }
 
@@ -272,10 +284,22 @@ export function subscribeCastStatus(
     'CAST_MEDIA_STATUS',
     (raw: unknown) => {
       const status = normalizeNativeCastStatus(raw);
-      if (status) cb(status);
+      if (status) {
+        recordCastStatus(status);
+        cb(status);
+      }
     },
   );
   return () => subscription.remove();
+}
+
+let previousStatusKey = '';
+function recordCastStatus(status: NativeCastStatus): void {
+  // Une entrée par transition ; les ticks de position ne chassent pas l'erreur.
+  const key = JSON.stringify([status.connected, status.deviceName, status.state, status.mediaSessionId, status.errorCode, status.nativeErrorCode, status.idleReason]);
+  if (key === previousStatusKey) return;
+  previousStatusKey = key;
+  recordCastDiagnostic('status', JSON.stringify(status));
 }
 
 export async function getRelayDisclosurePreference(): Promise<boolean> {

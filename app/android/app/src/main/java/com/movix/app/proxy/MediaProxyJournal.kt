@@ -29,13 +29,19 @@ internal object MediaProxyJournal {
 
     private val timestampFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
     private val entries = ArrayList<String>(MAX_ENTRIES)
+    private var generation = 0L
 
     @Volatile
     private var enabled = false
 
     fun setEnabled(value: Boolean) {
-        enabled = value
-        if (!value) clear()
+        synchronized(entries) {
+            enabled = value
+            if (!value) {
+                generation += 1L
+                entries.clear()
+            }
+        }
     }
 
     fun isEnabled(): Boolean = enabled
@@ -55,9 +61,12 @@ internal object MediaProxyJournal {
         // que le pont avait épinglé, sans que rien ne le signale.
         localRequestHeaders: Map<String, String>? = null,
     ) {
-        if (!enabled) return
+        val capture = synchronized(entries) {
+            if (!enabled) return
+            generation to timestampFormat.format(Date())
+        }
         val entry = buildString {
-            append('[').append(timestampFormat.format(Date())).append("] ")
+            append('[').append(capture.second).append("] ")
             append(phase).append(' ')
             append(statusCode?.toString() ?: error?.let { "ERR" } ?: "…").append(' ')
             append(method).append(' ').append(url).append('\n')
@@ -77,25 +86,29 @@ internal object MediaProxyJournal {
                 append("  erreur: ").append(error).append('\n')
             }
         }
-        append(entry)
+        append(entry, capture.first)
     }
 
     fun snapshot(): List<String> = synchronized(entries) { entries.toList() }
 
     fun clear() {
-        synchronized(entries) { entries.clear() }
+        synchronized(entries) {
+            generation += 1L
+            entries.clear()
+        }
     }
 
-    private fun append(entry: String) {
+    private fun append(entry: String, captureGeneration: Long) {
         synchronized(entries) {
+            if (!enabled || captureGeneration != generation) return
             entries.add(entry)
             while (entries.size > MAX_ENTRIES) entries.removeAt(0)
-        }
-        var offset = 0
-        while (offset < entry.length) {
-            val end = minOf(offset + MAX_LOG_CHUNK, entry.length)
-            Log.i(TAG, entry.substring(offset, end))
-            offset = end
+            var offset = 0
+            while (offset < entry.length) {
+                val end = minOf(offset + MAX_LOG_CHUNK, entry.length)
+                Log.i(TAG, entry.substring(offset, end))
+                offset = end
+            }
         }
     }
 }

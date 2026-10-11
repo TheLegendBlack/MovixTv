@@ -9,6 +9,7 @@ import { setLocalPlaybackAwake } from '../services/playbackAwake';
 import { setPictureInPicturePlaybackActive } from '../services/pictureInPicture';
 import { useAddress } from '../context/AddressContext';
 import { IS_TV } from '../services/deviceInfo';
+import { trustSiteUrls } from '../services/adBlock';
 
 /**
  * L'écran unique du shell : la WebView plein cadre, et l'écran d'erreur quand
@@ -20,6 +21,11 @@ import { IS_TV } from '../services/deviceInfo';
  * télécommande (`IS_TV` les masquait déjà). Les réglages utiles à la TV vivent
  * dans le site, sous `/tvapp/settings`.
  */
+
+const MAX_NETWORK_RETRIES = 2;
+const NETWORK_RETRY_WINDOW_MS = 30_000;
+const NETWORK_RETRY_DELAY_MS = 1000;
+
 export default function BrowserScreen() {
   const insets = useSafeAreaInsets();
   const webViewRef = useRef<WebViewBrowserRef>(null);
@@ -30,6 +36,8 @@ export default function BrowserScreen() {
     const bases = [config.primaryUrl, ...config.mirrors];
     // Sur TV on entre directement dans l'interface téléviseur : la racine sert
     // le site souris/tactile, inutilisable à la télécommande.
+    // Le bloqueur doit connaître ces hôtes avant la première requête de la page.
+    trustSiteUrls(bases);
     if (!IS_TV) return bases;
     return bases.map(base => `${base.replace(/\/+$/, '')}/tvapp`);
   }, [config]);
@@ -38,6 +46,8 @@ export default function BrowserScreen() {
   const [allMirrorsFailed, setAllMirrorsFailed] = useState(false);
   const [canGoBack, setCanGoBack] = useState(false);
   const [isPictureInPictureActive, setIsPictureInPictureActive] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const networkRetriesRef = useRef({ count: 0, since: 0 });
 
   const activeUrl = urlChain[mirrorIndex] ?? '';
 
@@ -78,6 +88,22 @@ export default function BrowserScreen() {
   const onWebViewError = useCallback(
     (description: string) => {
       console.warn('[BrowserScreen] WebView error', description, 'on', activeUrl);
+      // Le réseau a changé pendant le chargement (VPN DNS qui démarre, passage
+      // Wi-Fi/4G) : le miroir n'y est pour rien, on recharge le même.
+      const now = Date.now();
+      const retries = networkRetriesRef.current;
+      if (now - retries.since > NETWORK_RETRY_WINDOW_MS) {
+        retries.count = 0;
+        retries.since = now;
+      }
+      if (
+        description.includes('ERR_NETWORK_CHANGED') &&
+        retries.count < MAX_NETWORK_RETRIES
+      ) {
+        retries.count += 1;
+        setTimeout(() => setLoadAttempt(n => n + 1), NETWORK_RETRY_DELAY_MS);
+        return;
+      }
       if (mirrorIndex + 1 < urlChain.length) {
         setMirrorIndex(i => i + 1);
       } else {
@@ -113,7 +139,7 @@ export default function BrowserScreen() {
     }]}>
       <View style={styles.webViewContainer}>
         <WebViewBrowser
-          key={activeUrl}
+          key={`${activeUrl}#${loadAttempt}`}
           ref={webViewRef}
           url={activeUrl}
           onNavigationStateChange={onNavigationStateChange}

@@ -6,9 +6,19 @@ import App from './App.tsx'
 import axios from 'axios'
 import { installHttpCache } from './utils/httpCache'
 import { installSegmentedSeasons } from './utils/segmentedSeasons'
+import { installManualEpisodes } from './utils/manualEpisodes'
 import './index.css'
 import './styles/light-mode.css'
 import { isTvDevice } from './utils/tv/isTvDevice'
+import { installEdition } from './tv/edition'
+import { initFlexGapSupport } from './utils/flexGapSupport'
+
+// Repli de `gap` sur les conteneurs flex (amont, 10/2026) : détection avant
+// React, puis compensation par marges sur les WebView Android qui ne le gèrent
+// pas (Chromium < 84). Sans effet sur la TV de référence (WebView 152), où la
+// sonde mesure le gap et la fonction s'arrête aussitôt ; utile aux téléviseurs
+// plus anciens.
+initFlexGapSupport();
 
 // Point d'entrée du site téléviseur.
 //
@@ -25,6 +35,11 @@ import { isTvDevice } from './utils/tv/isTvDevice'
 if (isTvDevice()) {
   document.documentElement.classList.add('movix-tv');
 }
+
+// Ce qui dépend de l'édition, posé avant le premier rendu (un thème en cache,
+// par exemple, pour éviter un éclair des couleurs par défaut). Voir
+// `tv/edition.tsx`.
+installEdition();
 
 // Amorçage de la clé VIP en développement.
 //
@@ -59,9 +74,17 @@ if (import.meta.env.DEV) {
   }
 }
 
+const safeLocalStorageGetItem = (key: string): string | null => {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+
 // Coins carrés (Paramètres > Apparence) : posé avant le premier render pour
-// éviter un flash de coins arrondis.
-if (localStorage.getItem('square_corners_enabled') === '1') {
+// éviter un flash de coins arrondis. Togglé live depuis SettingsPage.
+if (safeLocalStorageGetItem('square_corners_enabled') === '1') {
   document.documentElement.classList.add('square-corners');
 }
 
@@ -76,6 +99,10 @@ installHttpCache(axios)
 // Posé APRÈS le cache — celui-ci stocke la réponse TMDB brute, la fusion
 // s'applique à chaque lecture. Voir `utils/segmentedSeasons.ts`.
 installSegmentedSeasons(axios)
+
+// Compléments locaux aux épisodes absents de TMDB (amont, 10/2026), communs
+// aux fiches et aux lecteurs.
+installManualEpisodes(axios)
 
 // Garde contre le plantage React + traduction navigateur (Google Translate,
 // Edge, Samsung Internet, …) : le moteur de traduction remplace des nœuds texte
@@ -106,10 +133,27 @@ if (typeof Node === 'function' && Node.prototype) {
   };
 }
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <ErrorBoundary>
-      <App />
-    </ErrorBoundary>
-  </StrictMode>
-);
+// Montage robuste (amont, 10/2026) : recrée le conteneur s'il manque (React
+// refuse de monter sur null, erreur #299) et attend le DOM s'il n'est pas prêt.
+const mountApp = () => {
+  let container = document.getElementById('root');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'root';
+    document.body.appendChild(container);
+  }
+
+  createRoot(container).render(
+    <StrictMode>
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
+    </StrictMode>
+  );
+};
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', mountApp, { once: true });
+} else {
+  mountApp();
+}

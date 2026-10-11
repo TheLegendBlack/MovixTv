@@ -263,7 +263,7 @@ const TvPlayerButton: React.FC<{ action: TvPlayerAction; focused: boolean }> = (
       ACTION_SIZE +
       ' transition-transform duration-150 ' +
       (focused
-        ? 'scale-110 bg-white text-black shadow-[0_2px_12px_rgba(0,0,0,0.5)]'
+        ? 'scale-110 bg-tv-focus text-tv-on-focus shadow-[0_2px_12px_rgba(0,0,0,0.5)]'
         : 'bg-white/20 text-white/90')
     }>
     {action.icon ? ICONS[action.icon] : action.label}

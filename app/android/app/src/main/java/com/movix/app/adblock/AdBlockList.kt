@@ -92,7 +92,21 @@ object AdBlockList {
         return if (takeThree) labels[labels.size - 3] else secondLevel
     }
 
+    /**
+     * Hôtes du site que charge le shell, déclarés par `BrowserScreen` avant le
+     * montage de la WebView (`AdBlockModule.trustSiteHost`). Sans eux, un site
+     * servi hors des domaines Movix (Railway, 11/10/2026) passait pour une
+     * iframe tierce : ses appels TMDB recevaient un 204 sans en-têtes CORS.
+     */
+    private val siteHosts = java.util.concurrent.CopyOnWriteArraySet<String>()
+
+    fun trustSiteHost(host: String) {
+        val h = host.trim().lowercase()
+        if (h.isNotEmpty()) siteHosts.add(h)
+    }
+
     fun isAllowed(host: String): Boolean {
+        if (host in siteHosts) return true
         if (host.startsWith("192.168.") || host.startsWith("10.") || host.startsWith("172.")) return true
         return ALLOW_SUFFIXES.any { host == it || host.endsWith(".$it") }
     }

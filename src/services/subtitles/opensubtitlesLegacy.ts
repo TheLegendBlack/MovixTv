@@ -1,4 +1,5 @@
 import { dedupeByUrl } from './filtering.ts';
+import { fetchJsonWithTimeout } from './request.ts';
 import type {
   SubtitleFormat,
   SubtitleProvider,
@@ -134,13 +135,11 @@ export const opensubtitlesLegacyProvider: SubtitleProvider = {
     const url = buildOpenSubtitlesUrl(query);
     if (!url) return [];
 
-    const response = await fetch(url, {
+    return mapOpenSubtitlesEntries(await fetchJsonWithTimeout(url, {
+      label: 'opensubtitles',
+      timeoutMs: REQUEST_TIMEOUT_MS,
+      signal,
       headers: { 'User-Agent': 'Movix/1.0' },
-      signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
-    });
-    if (!response.ok) {
-      throw new Error(`opensubtitles responded ${response.status}`);
-    }
-    return mapOpenSubtitlesEntries(await response.json());
+    }));
   },
 };

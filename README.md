@@ -33,7 +33,7 @@
   <strong>Licence :</strong> Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0) · <a href="./LICENSE">LICENSE</a>
 </p>
 
-Movix TV est une application **Android TV pilotée à la télécommande**. Ce dépôt est un clone de [Movix](https://github.com/movixcorp/MovixOpenSource) réduit à cet usage. Il contient deux choses :
+Movix TV est une application **Android TV pilotée à la télécommande**. Ce dépôt est un clone de [Movix](https://github.com/movixstream/MovixOpenSource) réduit à cet usage. Il contient deux choses :
 
 - **le site** (`src/`) : l'interface téléviseur et le lecteur vidéo, en React ;
 - **le shell** (`app/`) : l'application Android qui affiche ce site dans une WebView, avec ses modules natifs.
@@ -55,10 +55,11 @@ Les services distants de Movix (API, extraction des hébergeurs) sont utilisés 
 ## Ce que fait l'application
 
 - **Une interface pensée pour trois mètres** : bannière, rangées d'affiches, pages Films, Séries et Animés, collections « Voir plus », fiche de détail, recherche au clavier virtuel, réglages. Tout se pilote au pavé directionnel.
-- **Le lecteur Movix, adapté à la télécommande** : barre de lecture, panneau de réglages en arborescence (sources, qualité, audio, sous-titres, vitesse, format), touches Lecture/Pause, avance et retour rapides, sauts de 10 s aux flèches, reprise de lecture, épisode suivant.
+- **Le lecteur Movix, adapté à la télécommande** : barre de lecture, panneau de réglages en arborescence (sources, qualité, audio, sous-titres, vitesse, format), touches Lecture/Pause, avance et retour rapides, sauts de 10 s aux flèches, reprise de lecture, épisode suivant, noir et blanc à la pause (désactivable).
 - **Sous-titres** : décalage temporel, taille automatique pour la TV, pistes incrustées CEA-608 listées et activables, avec détection automatique de leur langue.
 - **Récupération des médias** : registre serveur Movix, avec repli sur l'extraction locale embarquée (userscript) quand le serveur n'a pas de résultat.
 - **Bloqueur de publicités natif** dans la WebView, débrayable depuis les réglages de l'interface TV.
+- **Clés saisies à la télécommande** : la clé VIP Movix et la clé TMDB se renseignent dans les réglages, au clavier virtuel.
 - **Shell Android** : proxy média natif (contournement CORS, en-têtes exigés par certains hébergeurs), mise à jour d'APK intégrée, DNS Cloudflare optionnel, écran maintenu allumé pendant la lecture, image dans l'image.
 
 ## Comment ça marche
@@ -153,7 +154,7 @@ Le fichier `.env` est ignoré par git : chaque poste remplit le sien. Les URL d'
 
 Les autres entrées de `.env.example` sont héritées du site web et restent vides. Les variables sont lues au démarrage de Vite : relancer `npm run tv` après une modification.
 
-La clé VIP est posée dans `localStorage['access_code']` de la WebView par `src/main.tsx`, en développement seulement.
+La clé VIP est posée dans `localStorage['access_code']` de la WebView par `src/main.tsx`, en développement seulement. Sans elle, elle se saisit dans **Paramètres › Clé VIP Movix** ; la clé TMDB de même, dans **Paramètres › Clé TMDB**, qui prime alors sur `.env`.
 
 ### 3. Préparer la TV
 
@@ -292,8 +293,8 @@ Les réglages de l'interface TV affichent le viewport, l'échelle et le palier m
 
 L'objectif final est une application installée sur le téléviseur qui tourne sans le poste de développement. **C'est faisable en l'état, sans nouveau développement natif** : le build release embarque le code du shell, et le site se construit en une commande. Il reste trois étapes :
 
-1. construire le site (`npm run build`) et le servir en **HTTPS** avec repli SPA, sur un domaine à soi ;
-2. choisir comment la clé VIP arrive dans l'application : amorçage au build (simple, pour un site privé) ou écran de saisie dans les réglages TV ;
+1. construire le site (`npm run build`) et le servir en **HTTPS** avec repli SPA, sur un domaine à soi. L'API Movix n'accepte que les origines de sa liste : faire ajouter ce domaine par l'équipe Movix, sinon la clé VIP et les sources sont refusées ;
+2. la clé VIP et la clé TMDB se saisissent déjà dans les réglages TV : rien à embarquer dans le build ;
 3. pointer le shell vers cette adresse, neutraliser la mise à jour automatique qui vise le dépôt Movix, fixer le nom et la version, signer, construire `assembleRelease`, installer.
 
 La procédure détaillée, avec les fichiers à modifier, est dans [app/README.md](app/README.md#portage-en-apk-autonome).
@@ -303,6 +304,7 @@ La procédure détaillée, avec les fichiers à modifier, est dans [app/README.m
 ```
 src/                    site React 18 + Vite 5, servi dans la WebView
   tv/                   interface téléviseur (/tvapp/*), moteur de focus, télécommande du lecteur
+  tv/settings/          réglages : saisie des clés VIP et TMDB
   pages/Watch/          pages de lecture (/watch/movie, /watch/tv)
   components/HLSPlayer  lecteur principal (hls.js) et son panneau de réglages TV
 app/                    shell React Native 0.75 (Android uniquement)

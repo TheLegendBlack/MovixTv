@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import TvBrowse, { type TvBrowseLeadingRow } from './TvBrowse';
 import { TvRow, type TvRowItemState } from './components/TvRow';
 import { TvCard } from './components/TvCard';
-import { TV_HOME_ROWS } from './data/tmdb';
+import { usePageRows } from './edition';
 import {
   remainingLabel,
   useContinueWatching,
@@ -38,6 +38,7 @@ const renderContinueCard = (
 );
 
 const TvHome: React.FC = () => {
+  const { rowIds, heroRowId } = usePageRows('home');
   const navigate = useNavigate();
   const continueEntries = useContinueWatching();
 
@@ -72,7 +73,7 @@ const TvHome: React.FC = () => {
     [continueEntries, openMedia],
   );
 
-  return <TvBrowse rowIds={TV_HOME_ROWS} heroRowId="tendances" leading={leading} />;
+  return <TvBrowse rowIds={rowIds} heroRowId={heroRowId} leading={leading} />;
 };
 
 export default TvHome;

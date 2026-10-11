@@ -146,6 +146,7 @@ export default defineConfig({
         '**/wasm/**',
         '**/userscript/**',
         '**/others/**',
+        '**/server/**',
       ],
     },
   },

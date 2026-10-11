@@ -3,12 +3,19 @@ import { lazyWithRetry } from './lazyWithRetry';
 
 export type RouteEntry = {
   path: string;
-  loader: (opts?: { silent?: boolean }) => Promise<{ default: ComponentType<unknown> }>;
+  loader: (opts?: { silent?: boolean; routeKey?: string }) => Promise<{ default: ComponentType<unknown> }>;
   fallback?: ReactNode;
+  /** Clé de remontage du composant (amont) ; par défaut le chemin complet. */
+  getComponentKey?: (pathname: string) => string;
 };
 
 const lz = <P extends object>(loader: () => Promise<{ default: ComponentType<P> }>) =>
-  (opts?: { silent?: boolean }) => lazyWithRetry(loader, opts) as Promise<{ default: ComponentType<unknown> }>;
+  (opts?: { silent?: boolean; routeKey?: string }) => lazyWithRetry(loader, opts) as Promise<{ default: ComponentType<unknown> }>;
+
+export const getProviderCatalogScope = (pathname: string): string | null => {
+  const match = pathname.match(/^\/provider\/([^/]+)\/(?:movies|tv)(?:\/[^/]+)?\/?$/);
+  return match ? `/provider/${match[1]}` : null;
+};
 
 /**
  * Les routes du site téléviseur. Le registre du site souris (63 routes) a été

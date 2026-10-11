@@ -1,4 +1,5 @@
 import { dedupeByUrl } from './filtering.ts';
+import { fetchJsonWithTimeout } from './request.ts';
 import type {
   SubtitleFormat,
   SubtitleProvider,
@@ -6,7 +7,7 @@ import type {
   SubtitleTrack,
 } from './types.ts';
 
-export const SHEGU_BASE_URL = 'https://subtitles.shegu.st';
+export const SHEGU_BASE_URL = 'https://subs.wing.st';
 
 const REQUEST_TIMEOUT_MS = 12_000;
 
@@ -84,12 +85,10 @@ export const sheguProvider: SubtitleProvider = {
     const url = buildSheguUrl(query);
     if (!url) return [];
 
-    const response = await fetch(url, {
-      signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
-    });
-    if (!response.ok) {
-      throw new Error(`shegu responded ${response.status}`);
-    }
-    return mapSheguEntries(await response.json());
+    return mapSheguEntries(await fetchJsonWithTimeout(url, {
+      label: 'shegu',
+      timeoutMs: REQUEST_TIMEOUT_MS,
+      signal,
+    }));
   },
 };

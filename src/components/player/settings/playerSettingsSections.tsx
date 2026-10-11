@@ -374,13 +374,16 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
         onSelect: () => nav.push('oled'),
       });
 
+      // Noir et blanc à la pause : l'amont l'a rendu désactivable le 10/2026,
+      // dans son panneau souris seulement. Il prend ici la place de
+      // « Réinitialiser le zoom », que la même mise à jour a retiré du lecteur
+      // (plus aucun état de zoom n'arrive dans ce contexte).
       rows.push({
-        kind: 'action',
-        id: 'image:zoom',
-        icon: RefreshCw,
-        label: tr(ctx, 'watch.resetZoom', 'Réinitialiser le zoom'),
-        disabled: !ctx.zoomState?.isZoomed,
-        onSelect: () => ctx.resetZoom?.(),
+        kind: 'toggle',
+        id: 'image:pause-grayscale',
+        label: tr(ctx, 'watch.pauseGrayscale', 'Noir et blanc à la pause'),
+        checked: Boolean(ctx.pauseGrayscaleEnabled),
+        onToggle: next => ctx.handlePauseGrayscaleChange?.(next),
       });
 
       return { title: tr(ctx, 'watch.formatTab', 'Image'), rows };

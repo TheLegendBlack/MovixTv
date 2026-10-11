@@ -306,14 +306,14 @@ const TvDetails: React.FC = () => {
       {details.backdropUrl && (
         <div className="pointer-events-none absolute inset-0">
           <img src={details.backdropUrl} alt="" className="h-full w-full object-cover" />
-          <div className="absolute inset-0 bg-gradient-to-r from-[#0a0a0a] via-[#0a0a0a]/85 to-[#0a0a0a]/40" />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0a] to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-r from-movix-ink via-movix-ink/85 to-movix-ink/40" />
+          <div className="absolute inset-0 bg-gradient-to-t from-movix-ink to-transparent" />
           {/* Une fois dans un onglet, l'illustration s'efface derrière le
               contenu : c'est ce que montre la capture Disney+ de l'onglet
               Épisodes, où le fond est presque noir. */}
           <div
             className={
-              'absolute inset-0 bg-[#0a0a0a] transition-opacity duration-200 ' +
+              'absolute inset-0 bg-movix-ink transition-opacity duration-200 ' +
               (inContent ? 'opacity-80' : 'opacity-0')
             }
           />

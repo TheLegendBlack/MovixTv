@@ -157,7 +157,7 @@ export const TvCard: React.FC<TvCardProps> = ({
             aria-hidden
             className="pointer-events-none absolute inset-0 rounded-xl transition-opacity duration-150"
             style={{
-              boxShadow: '0 0 0 3px #fff',
+              boxShadow: '0 0 0 3px rgb(var(--tv-focus))',
               opacity: focused ? 1 : 0,
             }}
           />

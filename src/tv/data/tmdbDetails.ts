@@ -1,9 +1,10 @@
 import axios from 'axios';
 import { getTmdbLanguage } from '@/i18n';
 import { posterUrl } from './tmdb';
+import { getTmdbApiKey } from '@/config/tmdbKey';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
-const TMDB_API_KEY = import.meta.env.VITE_TMDB_API_KEY || '';
+const TMDB_API_KEY = getTmdbApiKey();
 
 export type TvMediaType = 'movie' | 'tv';
 

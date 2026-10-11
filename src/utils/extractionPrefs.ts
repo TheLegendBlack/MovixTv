@@ -12,7 +12,7 @@ export const M3U8_EXTRACTOR_KEYS = [
 ] as const;
 
 export const LIVETV_SOURCE_KEYS = [
-  'northlive', 'vavoo', 'matches',
+  'northlive', 'vavoo', 'matches', 'streamed',
 ] as const;
 
 export const EXTRACTION_METHOD_KEYS = [

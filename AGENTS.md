@@ -5,9 +5,9 @@
 Ce dépôt est un clone de Movix consacré uniquement à une **application
 Android TV** : un shell React Native (`app/`) qui affiche dans une WebView le
 site React/Vite (`src/`) réduit à l'interface téléviseur et au lecteur. Pas de
-site web, pas de backend, pas d'extension, pas d'iOS, pas de Chromecast. Les
-services distants (API Movix, proxy `proxiesembed`) restent en ligne et sont
-appelés avec la clé VIP (`x-access-key`).
+site web souris, pas d'extension, pas d'iOS, pas de Chromecast. Les services
+distants (API Movix, proxy `proxiesembed`) restent en ligne et sont appelés
+avec la clé VIP (`x-access-key`).
 
 Optimisé pour un téléviseur de référence (Edenwood 4K, Android 11, WebView
 152, viewport CSS 960 × 540, SoC lent), mais adaptable à tout autre téléviseur
@@ -44,7 +44,7 @@ node --test src/tv/__tests__/*.mjs src/tv/nav/__tests__/*.mjs
 # tsconfig.app.json exige ignoreDeprecations "6.0", refusé par TS 5.9 :
 echo '{ "extends": "./tsconfig.app.json", "compilerOptions": { "ignoreDeprecations": "5.0" } }' > tsconfig.check.json \
   && npx tsc --noEmit -p tsconfig.check.json; rm -f tsconfig.check.json
-# ~40 erreurs de type préexistantes (amont) dans HLSPlayer*.tsx : comparer avant/après.
+# 50 erreurs de type préexistantes (amont) au 11/10/2026 : comparer avant/après.
 
 cd app
 npm start                      # Metro — tenu par l'utilisateur dans son terminal
@@ -65,8 +65,10 @@ src/
     TvCollection.tsx           # « Voir plus » : grille + bandeau de prévisualisation
     TvDetails.tsx, TvSearch.tsx, TvSettings.tsx, TvDiagnosticsPage.tsx
     tvScale.ts, devicePerformance.ts   # échelle de viewport, palier de performance mesuré
+    edition.tsx                # ce qui dépend de l'édition (démarrage, rangées, routes, lignes de Paramètres)
+    settings/                  # réglages : kit, saisie des clés VIP/TMDB
     components/                # TvTopNav, TvRow, TvCard, TvMoreCard, TvKeyboard, TvPreviewBanner
-    data/tmdb.ts               # registre des rangées TMDB et ordre par page
+    data/tmdb.ts, data/pages.ts   # registre des rangées TMDB, pages et rangées par défaut
     nav/                       # moteur de focus télécommande (resolveMove, TvFocusProvider, focusRestore)
     player/                    # télécommande du lecteur, contrôles TV
   pages/Watch/                 # WatchMovie, WatchTv
@@ -101,10 +103,20 @@ public/movix.png               # seul asset public
   chemins. Le tri de `.tv-backup/` appartient à l'utilisateur.
 - Patchs de l'auteur amont : `git apply` du `.patch`, jamais un écrasement par
   des fichiers complets antérieurs aux ajouts locaux ; contrôler par `diff`.
+- Dépôt amont : https://github.com/movixstream/MovixOpenSource. Reprise par
+  fusion à trois voies depuis le dernier commit intégré (`0e7cd86`, le
+  11/10/2026) ; détails et fichiers gardés à notre version dans `CLAUDE.md`.
 - `app/android/**` exige un nouvel APK ; `app/src/**` et `src/**` non.
 - Valider sur la TV (captures `adb exec-out screencap -p`, console via
   `adb logcat -d | grep CONSOLE`), pas seulement par le typecheck.
 - Ne pas lancer Metro ni Vite en tâche de fond depuis une session d'agent.
+
+## Colors and rows
+
+Couleurs de `src/tv` uniquement via les jetons `movix-ink`, `movix-red`,
+`tv-focus`, `tv-on-focus` (variables CSS `--tv-*`), jamais en dur. Les pages
+lisent leurs rangées par `usePageRows(page)` (`src/tv/edition.tsx`). La page
+Paramètres tient en six lignes au plus.
 
 ## Standalone APK (final step)
 
@@ -112,8 +124,8 @@ Faisable directement en l'état ; procédure complète dans `app/README.md`,
 section « Portage en APK autonome ». Points de vigilance : en release le shell
 résout l'adresse via rentry/`address.json` de Movix (remplacer par une adresse
 fixe), le pont n'accepte qu'une origine `https` (héberger `dist/` en HTTPS avec
-repli SPA), la clé VIP n'est amorcée qu'en développement (retirer la garde ou
-ajouter une saisie dans les réglages TV), la mise à jour automatique vise le
+repli SPA, à une adresse acceptée par l'API Movix), la clé VIP et la clé TMDB
+se saisissent dans les réglages TV, la mise à jour automatique vise le
 dépôt Movix (la neutraliser ou publier son propre `version.json`), et la
 signature release passe par `android/app/keystore.properties`.
 
@@ -121,8 +133,9 @@ signature release passe par `android/app/keystore.properties`.
 
 `.env` (gitignoré) : `VITE_MAIN_API`, `VITE_TMDB_API_KEY`,
 `VITE_PROXIES_EMBED_API`, `VITE_SITE_URL`, `VITE_DEV_ACCESS_CODE` (clé VIP
-personnelle, amorcée dans `localStorage` en développement seulement). Le
-reste du fichier est un héritage du site web, sans effet.
+personnelle, amorcée dans `localStorage` en développement seulement). Ne
+jamais construire un site public avec `VITE_TMDB_API_KEY` : elle serait dans
+le bundle. Le reste du fichier est un héritage du site web, sans effet.
 
 ## Security Rules
 

@@ -41,6 +41,8 @@ src/
 |   |-- TvCollection.tsx               # « Voir plus » : grille + bandeau de prévisualisation
 |   |-- TvDetails.tsx, TvSearch.tsx, TvSettings.tsx, TvDiagnosticsPage.tsx
 |   |-- tvScale.ts                     # Échelle de viewport (gabarit 960 × 540)
+|   |-- edition.tsx                    # Ce qui dépend de l'édition : démarrage, rangées, routes, lignes de Paramètres
+|   |-- settings/                      # Réglages : kit, saisie des clés VIP et TMDB
 |   |-- devicePerformance.ts           # Palier de performance mesuré, lu par le mode léger
 |   |-- components/                    # TvTopNav, TvRow, TvCard, TvMoreCard, TvKeyboard, TvPreviewBanner
 |   |-- data/                          # tmdb.ts (registre des rangées), fiches, progression, liste
@@ -62,7 +64,8 @@ src/
 - lecture : sources (registre serveur Movix avec repli sur l'extraction locale), qualité, audio, sous-titres (décalage, taille TV, pistes incrustées avec détection de langue), vitesse, format, reprise, épisode suivant ;
 - télécommande : flèches, OK, Retour, touches média ;
 - adaptation à l'appareil : échelle de viewport et palier de performance ;
-- bascule du bloqueur de publicités natif du shell, depuis `/tvapp/settings`.
+- bascule du bloqueur de publicités natif du shell, depuis `/tvapp/settings` ;
+- saisie de la clé VIP et de la clé TMDB au clavier virtuel, dans les réglages.
 
 ## Variables d'environnement
 

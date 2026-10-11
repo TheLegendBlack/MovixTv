@@ -70,7 +70,7 @@ let root: HTMLElement | null = null;
 let listening = false;
 
 /** L'élément qui doit héberger la racine : le plein écran s'il le peut. */
-const resolveHost = (): HTMLElement => {
+const resolveHost = (): HTMLElement | null => {
   const element = getFullscreenElement();
   if (element instanceof HTMLElement && !CHILDLESS_TAGS.has(element.tagName)) {
     return element;
@@ -82,6 +82,7 @@ const resolveHost = (): HTMLElement => {
 const syncPlacement = (): void => {
   if (!root) return;
   const host = resolveHost();
+  if (!host) return;
   // Un élément situé *dans* une surcouche peut lui-même passer en plein écran.
   // Y greffer la racine formerait un cycle, et `appendChild` lèverait une
   // `HierarchyRequestError` : on la laisse où elle est.
@@ -104,6 +105,7 @@ export const getOverlayPortalRoot = (): HTMLElement => {
   if (!listening) {
     listening = true;
     FULLSCREEN_CHANGE_EVENTS.forEach(event => document.addEventListener(event, syncPlacement));
+    document.addEventListener('DOMContentLoaded', syncPlacement);
   }
 
   syncPlacement();

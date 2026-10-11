@@ -1,4 +1,6 @@
 import { Suspense, useEffect, useState, type ReactNode } from 'react';
+import { useLightMode } from '@/context/LightModeContext';
+import { LightweightLoading } from '@/components/LightweightLoading';
 
 interface Props {
   delay?: number;
@@ -24,8 +26,9 @@ const DelayedFallback = ({ delay, children }: { delay: number; children: ReactNo
   return <>{show ? children : null}</>;
 };
 
-export const DelayedSuspense = ({ delay = 200, fallback, children }: Props) => (
-  <Suspense fallback={<DelayedFallback delay={delay}>{fallback}</DelayedFallback>}>
+export const DelayedSuspense = ({ delay = 200, fallback, children }: Props) => {
+  const { isLightMode } = useLightMode();
+  return <Suspense fallback={isLightMode ? <LightweightLoading /> : <DelayedFallback delay={delay}>{fallback}</DelayedFallback>}>
     {children}
-  </Suspense>
-);
+  </Suspense>;
+};

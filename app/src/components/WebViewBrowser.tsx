@@ -127,6 +127,10 @@ function isSameOrigin(a: string, b: string): boolean {
   }
 }
 
+const MIRROR_DOWN_STATUSES = new Set([
+  500, 502, 504, 520, 521, 522, 523, 524, 525, 526, 530,
+]);
+
 const WebViewBrowser = forwardRef<WebViewBrowserRef, WebViewBrowserProps>(
   ({ url, onNavigationStateChange, onError, onPictureInPictureModeChange }, ref) => {
     const webViewRef = useRef<WebView>(null);
@@ -247,6 +251,10 @@ const WebViewBrowser = forwardRef<WebViewBrowserRef, WebViewBrowserProps>(
 
     const onHttpError = useCallback(
       (event: any) => {
+        // Seul un serveur en panne justifie de passer au miroir suivant. Un 403
+        // ou un 503 est souvent le défi Cloudflare servi aux IP de VPN : la page
+        // doit s'afficher pour que le défi se résolve.
+        if (!MIRROR_DOWN_STATUSES.has(event.nativeEvent.statusCode)) return;
         onError?.(
           `HTTP ${event.nativeEvent.statusCode}: ${event.nativeEvent.url}`,
         );
@@ -274,10 +282,12 @@ const WebViewBrowser = forwardRef<WebViewBrowserRef, WebViewBrowserProps>(
       [journalConsole],
     );
 
+    // TV : agent utilisateur leanback. iOS (amont) : celui de WKWebView, un
+    // User-Agent Safari figé perturbant Turnstile.
     const userAgent = IS_TV
       ? CONFIG.USER_AGENT_TV
       : Platform.OS === 'ios'
-        ? CONFIG.USER_AGENT_IOS
+        ? undefined
         : CONFIG.USER_AGENT;
 
     return (
@@ -287,7 +297,7 @@ const WebViewBrowser = forwardRef<WebViewBrowserRef, WebViewBrowserProps>(
         style={{ flex: 1, backgroundColor: '#0a0a0a' }}
         // Injection du bridge + userscript avant le chargement
         injectedJavaScriptBeforeContentLoaded={injectedJS}
-        // Réinjection après chaque navigation
+        // Garder les iframes Turnstile sans bridge ni userscript Movix.
         injectedJavaScriptBeforeContentLoadedForMainFrameOnly={true}
         // Bridge messages
         onMessage={onMessage}
@@ -325,7 +335,9 @@ const WebViewBrowser = forwardRef<WebViewBrowserRef, WebViewBrowserProps>(
         allowsFullscreenVideo={true}
         allowsBackForwardNavigationGestures={true}
         // Sécurité
-        originWhitelist={['https://*', 'http://*']}
+        // Turnstile utilise aussi des documents internes about:srcdoc.
+        // about:blank est déjà autorisé par react-native-webview.
+        originWhitelist={['https://*', 'http://*', 'about:srcdoc']}
         // « compatibility » laisse passer le contenu passif (images) mais
         // bloque toujours le contenu actif : un `fetch("http://…")` depuis la
         // page échouait donc en quelques millisecondes (« Network request

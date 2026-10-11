@@ -20,6 +20,8 @@ interface AdBlockNativeModule {
   isEnabled(): Promise<boolean>;
   getStats(): Promise<AdBlockStats>;
   resetStats(): Promise<boolean>;
+  /** Absent des APK antérieurs au 11/10/2026. */
+  trustSiteHost?(host: string): boolean;
 }
 
 const native = (NativeModules.MovixAdBlock ?? null) as AdBlockNativeModule | null;
@@ -50,6 +52,19 @@ export async function setAdBlockEnabled(enabled: boolean): Promise<void> {
 export async function getAdBlockStats(): Promise<AdBlockStats> {
   if (!native) return { enabled: false, blocked: 0, recent: [] };
   return native.getStats();
+}
+
+/**
+ * Déclare au bloqueur les hôtes du site chargé (adresse principale et miroirs).
+ * Leurs requêtes sont celles du site, jamais d'une iframe tierce, quel que soit
+ * le domaine : Movix, `localhost`, ou un hébergement propre comme Railway.
+ */
+export function trustSiteUrls(urls: readonly string[]): void {
+  if (!native?.trustSiteHost) return;
+  for (const url of urls) {
+    const host = hostOf(url);
+    if (host) native.trustSiteHost(host);
+  }
 }
 
 export async function resetAdBlockStats(): Promise<void> {

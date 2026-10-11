@@ -41,7 +41,7 @@ export const TvPreviewBanner: React.FC<{
   return (
     <div
       aria-hidden={!visible}
-      className="pointer-events-none absolute inset-x-0 z-10 flex items-start gap-6 bg-[#0a0a0a] transition-opacity duration-200"
+      className="pointer-events-none absolute inset-x-0 z-10 flex items-start gap-6 bg-movix-ink transition-opacity duration-200"
       // Hauteur du bandeau plus son espacement : le fond opaque couvre aussi
       // l'interstice, où le bas du titre de la rangée du dessus passerait sinon.
       style={{ top: -lift, height: PREVIEW_HEIGHT + PREVIEW_GAP, opacity: visible ? 1 : 0 }}>

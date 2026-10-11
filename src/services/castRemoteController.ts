@@ -28,7 +28,7 @@ const REQUIRED_ANDROID_CAST_BRIDGE_METHODS = {
   setRelayDisclosureSuppressed: true,
   openBatterySettings: true,
   requestRelayNotificationPermission: true,
-} as const satisfies Record<keyof MovixAndroidCastBridge, true>;
+} as const satisfies Record<Exclude<keyof MovixAndroidCastBridge, 'copyDiagnostics'>, true>;
 
 export function isMovixAndroidCastBridgeCompatible(
   bridge: unknown,

@@ -9,6 +9,8 @@ import TvSettings from './TvSettings';
 import TvMovies from './TvMovies';
 import TvSeries from './TvSeries';
 import TvAnimes from './TvAnimes';
+import TvKeyEntry from './settings/TvKeyEntry';
+import { EDITION_ROUTES } from './edition';
 
 /**
  * Racine de l'interface téléviseur, montée sur `/tvapp/*`.
@@ -23,6 +25,11 @@ const TvApp: React.FC = () => (
       <Route path="/" element={<TvHome />} />
       <Route path="/search" element={<TvSearch />} />
       <Route path="/settings" element={<TvSettings />} />
+      <Route path="/settings/key/:kind" element={<TvKeyEntry />} />
+      {/* Routes propres à l'édition : voir `edition.tsx`. */}
+      {EDITION_ROUTES.map(route => (
+        <Route key={route.path} path={route.path} element={route.element} />
+      ))}
       <Route path="/movies" element={<TvMovies />} />
       <Route path="/series" element={<TvSeries />} />
       <Route path="/animes" element={<TvAnimes />} />

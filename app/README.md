@@ -94,8 +94,7 @@ poste de développement, sans Metro ni ponts adb. **En l'état du code, c'est
 faisable directement**, sans nouveau développement natif : le build release
 embarque déjà le bundle JavaScript, le proxy, le bloqueur et la télécommande
 sont finis, et le site se construit en une commande. Il reste à décider où le
-site est servi et comment la clé VIP arrive dans l'application, puis à
-configurer le shell en conséquence. La procédure, dans l'ordre :
+site est servi, puis à configurer le shell en conséquence. La procédure, dans l'ordre :
 
 ### 1. Construire le site
 
@@ -106,14 +105,14 @@ npm run build    # -> dist/
 
 Le build lit `.env` (`VITE_MAIN_API`, `VITE_PROXIES_EMBED_API`, `VITE_SITE_URL`, `VITE_TMDB_API_KEY`).
 
-### 2. Décider comment la clé VIP arrive dans l'application
+### 2. La clé VIP arrive par les réglages
 
 `src/main.tsx` ne pose la clé (`VITE_DEV_ACCESS_CODE`) dans le stockage de la
-WebView **qu'en développement** ; un build de production ne l'embarque pas, et
-l'interface TV n'a pas encore d'écran de saisie du code d'accès. Deux options :
-
-- **Directe** : retirer la garde `import.meta.env.DEV` autour de l'amorçage dans `src/main.tsx`, pour que le build de production pose la clé s'il a été construit avec `VITE_DEV_ACCESS_CODE`. La clé est alors lisible dans le bundle hébergé : acceptable pour un site privé servi à une seule télévision, pas pour une adresse publique.
-- **Propre** : ajouter une entrée « Code d'accès » dans `src/tv/TvSettings.tsx`, saisie avec `TvKeyboard` et écrite dans `localStorage['access_code']` (puis `is_vip`), comme le faisait le formulaire du site souris. Petit développement, à préférer si le site est accessible à d'autres.
+WebView **qu'en développement** ; un build de production ne l'embarque pas.
+Depuis 10/2026, l'interface TV a son écran de saisie : **Paramètres › Clé VIP
+Movix**, au clavier virtuel, qui écrit `localStorage['access_code']` et vérifie
+la clé auprès de l'API. La clé TMDB se saisit de même (**Paramètres › Clé
+TMDB**) et prime sur `VITE_TMDB_API_KEY`. Rien à embarquer dans le build.
 
 ### 3. Servir `dist/` en HTTPS
 

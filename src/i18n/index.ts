@@ -5,6 +5,7 @@ import LanguageDetector from 'i18next-browser-languagedetector';
 import { resolveCurrentDomain } from './currentDomain';
 import fr from './locales/fr.json';
 import { clearHttpCache } from '../utils/httpCache';
+import { readLocalStorage } from '../utils/browserStorage';
 
 export const SUPPORTED_LANGUAGES = [
   { code: 'fr', label: 'Fran\u00e7ais', flagUrl: 'https://flagcdn.com/w40/fr.png' },
@@ -70,12 +71,8 @@ export const getResolvedAppLanguage = (): LoadedLanguage =>
 
 // Retrieve stored language from localStorage (set by user in settings or loaded from server)
 const getStoredLanguage = (): LoadedLanguage | null => {
-  try {
-    const storedLanguage = localStorage.getItem('user_language');
-    return storedLanguage ? resolveLoadedLanguage(storedLanguage) : null;
-  } catch {
-    return null;
-  }
+  const storedLanguage = readLocalStorage('user_language');
+  return storedLanguage ? resolveLoadedLanguage(storedLanguage) : null;
 };
 
 // L'anglais n'est pas déclaré dans `resources` au boot : ~356 Ko de JSON
@@ -124,9 +121,11 @@ i18n
       },
     },
     detection: {
-      order: ['localStorage', 'navigator'],
-      lookupLocalStorage: 'user_language',
-      caches: ['localStorage'],
+      // La préférence stockée est lue par getStoredLanguage(), avec le même
+      // repli sûr que la détection asynchrone. Garder le cache i18next activé
+      // ferait réécrire localStorage hors de notre garde lors d'un changement.
+      order: ['navigator'],
+      caches: [],
     },
     react: {
       // Re-render les composants dès que le bundle 'en' arrive via
@@ -157,15 +156,27 @@ i18n.on('languageChanged', (lng: string) => {
   lastKnownLanguage = lng;
 });
 
-// Helper to change language and persist locally
-export const changeLanguage = async (lang: SupportedLanguage): Promise<void> => {
+let languageChoiceRevision = 0;
+
+const applyLanguage = async (lang: SupportedLanguage, expectedRevision: number): Promise<void> => {
   const resolvedLanguage = resolveLoadedLanguage(lang);
   await i18n.changeLanguage(resolvedLanguage);
+
+  // Une détection réseau plus ancienne ne doit pas persister par-dessus un
+  // choix effectué entre-temps dans les réglages.
+  if (expectedRevision !== languageChoiceRevision) return;
+
   try {
     localStorage.setItem('user_language', resolvedLanguage);
   } catch {
-    // Ignore storage errors
+    // La langue active reste utilisable même sans stockage persistant.
   }
+};
+
+// Helper to change language and persist locally
+export const changeLanguage = async (lang: SupportedLanguage): Promise<void> => {
+  const revision = ++languageChoiceRevision;
+  await applyLanguage(lang, revision);
 };
 
 /** Maps country codes to the most commonly spoken language supported by the app */
@@ -192,11 +203,12 @@ const COUNTRY_TO_LANG: Record<string, string> = {
  * Only runs when no language has been stored yet (i.e., first visit).
  */
 export const detectInitialLanguage = async (): Promise<void> => {
-  const storedLanguage = localStorage.getItem('user_language');
+  const detectionRevision = languageChoiceRevision;
+  const storedLanguage = readLocalStorage('user_language');
   if (storedLanguage) {
     const resolvedStoredLanguage = resolveLoadedLanguage(storedLanguage);
     if (storedLanguage !== resolvedStoredLanguage || getResolvedAppLanguage() !== resolvedStoredLanguage) {
-      await changeLanguage(resolvedStoredLanguage);
+      await applyLanguage(resolvedStoredLanguage, detectionRevision);
     }
     return;
   }
@@ -205,30 +217,46 @@ export const detectInitialLanguage = async (): Promise<void> => {
   const rawBrowserLang = navigator.language || navigator.languages?.[0] || '';
   const browserLang = normalizeLanguageCode(rawBrowserLang);
   if (browserLang && LOADED_LANG_CODES.has(browserLang as SupportedLanguage)) {
-    await changeLanguage(browserLang as SupportedLanguage);
+    if (detectionRevision === languageChoiceRevision) {
+      await applyLanguage(browserLang as SupportedLanguage, detectionRevision);
+    }
     return;
   }
 
   // 2. Try IP geolocation (free service, no key required)
+  let countryLanguage: SupportedLanguage | null = null;
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3000);
-    const res = await fetch('https://ipapi.co/json/', { signal: controller.signal });
-    clearTimeout(timeoutId);
-    if (res.ok) {
-      const data = await res.json();
-      const countryLang = COUNTRY_TO_LANG[data.country_code as string];
-      if (countryLang && LOADED_LANG_CODES.has(countryLang as SupportedLanguage)) {
-        await changeLanguage(countryLang as SupportedLanguage);
-        return;
+    try {
+      const res = await fetch('https://ipapi.co/json/', { signal: controller.signal });
+      if (res.ok) {
+        const data = await res.json();
+        const countryLang = COUNTRY_TO_LANG[data.country_code as string];
+        if (countryLang && LOADED_LANG_CODES.has(countryLang as SupportedLanguage)) {
+          countryLanguage = countryLang as SupportedLanguage;
+        }
       }
+    } finally {
+      clearTimeout(timeoutId);
     }
   } catch {
     // IP detection failed -- fall through to English
   }
 
+  if (countryLanguage) {
+    if (detectionRevision === languageChoiceRevision) {
+      // L'application de la langue reste hors du catch réseau : une vraie
+      // erreur i18n doit remonter au lieu d'être prise pour un échec de l'IP.
+      await applyLanguage(countryLanguage, detectionRevision);
+    }
+    return;
+  }
+
   // 3. Fallback to English
-  await changeLanguage(DEFAULT_LANGUAGE);
+  if (detectionRevision === languageChoiceRevision) {
+    await applyLanguage(DEFAULT_LANGUAGE, detectionRevision);
+  }
 };
 
 export default i18n;

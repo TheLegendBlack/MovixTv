@@ -1,5 +1,8 @@
 package com.movix.app.proxy
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.ReactApplicationContext
@@ -94,6 +97,42 @@ class MediaProxyModule(
     fun clearJournal(promise: Promise) {
         MediaProxyJournal.clear()
         promise.resolve(true)
+    }
+
+    @ReactMethod
+    fun copyDiagnosticText(text: String, promise: Promise) {
+        reactApplicationContext.runOnUiQueueThread {
+            try {
+                require(text.toByteArray(Charsets.UTF_8).size <= 256_000)
+                val clipboard = reactApplicationContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("Diagnostic Movix", text))
+                promise.resolve(true)
+            } catch (_: Exception) {
+                promise.reject("DIAGNOSTICS_COPY_FAILED", "Copie impossible")
+            }
+        }
+    }
+
+    @ReactMethod
+    fun shareDiagnosticText(text: String, promise: Promise) {
+        openExecutor.execute {
+            try {
+                val intent = DiagnosticExport.createShareIntent(reactApplicationContext, text)
+                reactApplicationContext.runOnUiQueueThread {
+                    try {
+                        val activity = currentActivity
+                            ?.takeUnless { it.isFinishing || it.isDestroyed }
+                            ?: throw IllegalStateException("No foreground activity")
+                        activity.startActivity(android.content.Intent.createChooser(intent, "Partager le diagnostic Movix"))
+                        promise.resolve(true)
+                    } catch (_: Exception) {
+                        promise.reject("DIAGNOSTICS_SHARE_FAILED", "Partage impossible")
+                    }
+                }
+            } catch (_: Exception) {
+                promise.reject("DIAGNOSTICS_EXPORT_FAILED", "Création du fichier impossible")
+            }
+        }
     }
 
     @ReactMethod

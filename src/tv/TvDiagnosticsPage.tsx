@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type Hls from 'hls.js';
 import { getTvDetection, setTvOverride } from '@/utils/tv/isTvDevice';
+import { TV_SAFE_X } from '@/tv/components/TvRow';
+import { TvIcon, TvSectionLabel, TvStatusDot, TvToggle, type TvIconName, type TvTone } from '@/tv/settings/kit';
 import { useSpatialNavProbe } from './useSpatialNavProbe';
 import { useFpsMeter } from './useFpsMeter';
 import {
@@ -18,13 +21,34 @@ import {
  * vrai téléviseur aux questions qui conditionnent tout le reste du chantier.
  *   1. La détection TV fonctionne-t-elle ?
  *   2. Quel viewport CSS la WebView expose-t-elle réellement ?
- *   3. Les touches de la télécommande arrivent-elles, et avec quelle latence ?
- *   4. Quels codecs et quel niveau Widevine sont disponibles ?
+ *   3. Quels codecs et quel niveau Widevine sont disponibles ?
+ *   4. Les touches de la télécommande arrivent-elles, et avec quelle latence ?
  *   5. Le HLS joue-t-il, et à quel framerate l'interface tient-elle ?
  *
- * Accessible sur /tvapp/diag. Dans un navigateur de bureau : /tvapp/diag?tv=1
+ * Accessible sur /tvapp/diag, depuis Paramètres. Dans un navigateur de bureau :
+ * /tvapp/diag?tv=1. Le préfixe est /tvapp et non /tv : `/tv/:id` est déjà la
+ * route des séries.
  *
- * Le préfixe est /tvapp et non /tv : `/tv/:id` est déjà la route des séries.
+ * ## Présentation
+ *
+ * Même gabarit que les sous-écrans de Paramètres : en-tête avec Retour, un
+ * onglet par question, un écran fixe de 960×540 sans défilement. Chaque onglet
+ * porte une pastille d'état, pour lire le verdict d'ensemble sans tout ouvrir.
+ * Les onglets s'ouvrent avec OK, comme sur l'écran Couleurs : un panneau qui
+ * changerait au simple passage du focus disparaîtrait dès qu'une flèche
+ * gauche, depuis la grille de test, remonte sur un autre onglet.
+ *
+ * ## Navigation
+ *
+ * La page reste hors de `TvLayout` : elle porte sa propre sonde
+ * (`useSpatialNavProbe`), qui déplace le **focus DOM** entre les éléments
+ * `data-tv-focusable`. Les styles de focus sont donc des `focus:` CSS, pas
+ * l'état du moteur, et les briques de `settings/kit` n'en sont reprises que pour
+ * leur apparence. Un panneau masqué retire `data-tv-focusable` à ses éléments :
+ * la sonde ne doit pas viser ce que le navigateur refuse de focaliser.
+ *
+ * La touche Retour de la télécommande n'est pas interceptée : elle fait partie
+ * des touches à tester. On quitte la page par le bouton Retour à l'écran.
  */
 
 // Flux de test public d'Apple : multi-débit, TS, sous-titres. Sert de référence
@@ -50,58 +74,99 @@ interface PlaybackStats {
   level: string;
 }
 
-const Panel: React.FC<{ title: string; children: React.ReactNode; className?: string }> = ({
-  title,
-  children,
-  className = '',
-}) => (
-  <section
-    className={`rounded-2xl border border-white/10 bg-white/[0.03] p-6 ${className}`}
-  >
-    <h2 className="mb-4 text-2xl font-bold tracking-tight text-movix-red-bright">{title}</h2>
-    {children}
-  </section>
-);
+type TabId = 'detection' | 'ecran' | 'codecs' | 'telecommande' | 'lecture';
 
-const Row: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
-  <div className="flex items-baseline justify-between gap-6 border-b border-white/5 py-2 last:border-b-0">
-    <span className="text-lg text-white/60">{label}</span>
-    <span className="text-right text-lg font-semibold tabular-nums">{children}</span>
-  </div>
-);
+const TABS: { id: TabId; label: string; icon: TvIconName }[] = [
+  { id: 'detection', label: 'Détection', icon: 'target' },
+  { id: 'ecran', label: 'Écran', icon: 'monitor' },
+  { id: 'codecs', label: 'Codecs & DRM', icon: 'shield' },
+  { id: 'telecommande', label: 'Télécommande', icon: 'remote' },
+  { id: 'lecture', label: 'Lecture HLS', icon: 'play' },
+];
+
+/* --- Briques ---------------------------------------------------------------- */
+
+/** Attribut lu par la sonde : présent seulement sur ce qui est visible. */
+const focusable = (on = true) => (on ? { 'data-tv-focusable': '' } : { tabIndex: -1 });
+
+/** Surface d'un bouton, et son focus : la pastille `tv-focus` des autres écrans. */
+const PRESSABLE =
+  'border-2 border-white/[0.08] bg-white/[0.05] text-white outline-none transition-transform duration-150 ' +
+  'focus:scale-[1.02] focus:border-transparent focus:bg-tv-focus focus:text-tv-on-focus ' +
+  'focus:shadow-[0_6px_20px_rgb(0_0_0/0.45)]';
+
+const toneText: Record<TvTone, string> = {
+  ok: 'text-emerald-300',
+  warn: 'text-amber-300',
+  error: 'text-red-300',
+  off: 'text-white/50',
+};
 
 const Verdict: React.FC<{ ok: boolean; children?: React.ReactNode }> = ({ ok, children }) => (
-  <span className={ok ? 'text-emerald-400' : 'text-red-400'}>
+  <span className={'inline-flex items-center gap-1.5 font-semibold ' + (ok ? 'text-emerald-300' : 'text-red-300')}>
+    <TvStatusDot tone={ok ? 'ok' : 'error'} />
     {children ?? (ok ? 'oui' : 'non')}
   </span>
 );
 
-const TvButton: React.FC<{
+const Row: React.FC<{ label: React.ReactNode; children: React.ReactNode }> = ({ label, children }) => (
+  <div className="flex items-baseline justify-between gap-4 border-b border-white/[0.06] py-1.5 text-[14px] last:border-b-0">
+    <span className="min-w-0 truncate text-white/60">{label}</span>
+    <span className="shrink-0 text-right font-semibold tabular-nums">{children}</span>
+  </div>
+);
+
+const StatTile: React.FC<{ label: string; value: React.ReactNode; sub?: string; tone?: TvTone; large?: boolean }> = ({
+  label,
+  value,
+  sub,
+  tone,
+  large = false,
+}) => (
+  <div className="min-w-0 rounded-xl bg-white/[0.04] px-3 py-2">
+    <p className="truncate text-[11px] font-bold uppercase tracking-[0.12em] text-white/40">{label}</p>
+    <p
+      className={
+        'truncate font-black tabular-nums leading-tight ' +
+        (large ? 'mt-1 text-[24px] ' : 'mt-0.5 text-[17px] ') +
+        (tone ? toneText[tone] : 'text-white')
+      }>
+      {value}
+    </p>
+    {sub && <p className="mt-0.5 truncate text-[12px] text-white/40">{sub}</p>}
+  </div>
+);
+
+const DiagButton: React.FC<{
+  label: React.ReactNode;
+  icon?: TvIconName;
   onClick: () => void;
-  children: React.ReactNode;
+  visible?: boolean;
   className?: string;
-}> = ({ onClick, children, className = '' }) => (
+  ariaLabel?: string;
+}> = ({ label, icon, onClick, visible = true, className = '', ariaLabel }) => (
   <button
     type="button"
-    data-tv-focusable=""
+    {...focusable(visible)}
+    aria-label={ariaLabel}
     onClick={onClick}
-    className={
-      'rounded-xl border-2 border-white/15 bg-white/5 px-6 py-4 text-xl font-semibold ' +
-      'outline-none transition-transform duration-100 ' +
-      'focus:border-movix-red-bright focus:bg-movix-red/20 focus:scale-105 ' +
-      'focus:ring-4 focus:ring-movix-red/50 ' +
-      className
-    }
-  >
-    {children}
+    className={'flex h-9 items-center justify-center gap-2 rounded-lg px-3.5 text-[14px] font-semibold ' + PRESSABLE + ' ' + className}>
+    {icon && <TvIcon name={icon} size={16} />}
+    {label}
   </button>
 );
 
+/* --- Page ------------------------------------------------------------------- */
+
 const TvDiagnosticsPage: React.FC = () => {
+  const navigate = useNavigate();
   const detection = useMemo(() => getTvDetection(), []);
   const codecs = useMemo<CodecProbe[]>(() => probeCodecs(), []);
   const hlsSupport = useMemo(() => probeHls(), []);
   const [drm, setDrm] = useState<DrmProbe[] | null>(null);
+
+  const [tab, setTab] = useState<TabId>('detection');
+  const [showSafeZone, setShowSafeZone] = useState(false);
 
   const [keyLog, setKeyLog] = useState<KeyLogEntry[]>([]);
   const keyIdRef = useRef(0);
@@ -122,11 +187,19 @@ const TvDiagnosticsPage: React.FC = () => {
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
+  const firstTabRef = useRef<HTMLButtonElement>(null);
 
   const fps = useFpsMeter(true);
 
   useEffect(() => {
     void probeDrm().then(setDrm);
+  }, []);
+
+  // Focus de départ sur le premier onglet, si la sonde n'en a pas déjà posé un.
+  useEffect(() => {
+    const active = document.activeElement;
+    if (active && active !== document.body) return;
+    firstTabRef.current?.focus();
   }, []);
 
   useEffect(() => {
@@ -152,18 +225,13 @@ const TvDiagnosticsPage: React.FC = () => {
     // l'utilisateur ressent, pas le temps de traitement de l'événement.
     requestAnimationFrame(() => {
       const latencyMs = Math.round(performance.now() - pressedAt);
-      setKeyLog(previous =>
-        previous.map(entry => (entry.id === id ? { ...entry, latencyMs } : entry)),
-      );
+      setKeyLog(previous => previous.map(entry => (entry.id === id ? { ...entry, latencyMs } : entry)));
     });
   }, []);
 
   const onKeyEvent = useCallback(
     (event: KeyboardEvent) => {
-      pushKeyLog(
-        event.key === ' ' ? 'Space' : event.key,
-        `code=${event.code || '—'} keyCode=${event.keyCode}`,
-      );
+      pushKeyLog(event.key === ' ' ? 'Space' : event.key, `code=${event.code || '—'} keyCode=${event.keyCode}`);
     },
     [pushKeyLog],
   );
@@ -255,29 +323,49 @@ const TvDiagnosticsPage: React.FC = () => {
         totalFrames: quality?.totalVideoFrames ?? 0,
         resolution: `${video.videoWidth}×${video.videoHeight}`,
         buffered,
-        level: currentLevel
-          ? `${currentLevel.height}p @ ${Math.round((currentLevel.bitrate ?? 0) / 1000)} kbps`
-          : 'natif',
+        level: currentLevel ? `${currentLevel.height}p @ ${Math.round((currentLevel.bitrate ?? 0) / 1000)} kbps` : 'natif',
       });
     }, 500);
     return () => window.clearInterval(interval);
   }, [isPlaying]);
 
-  const dropRate =
-    stats && stats.totalFrames > 0
-      ? (stats.droppedFrames / stats.totalFrames) * 100
-      : 0;
+  /* --- Verdicts ----------------------------------------------------------- */
+
+  const dropRate = stats && stats.totalFrames > 0 ? (stats.droppedFrames / stats.totalFrames) * 100 : 0;
+  const fpsTone: TvTone = fps.current >= 50 ? 'ok' : fps.current >= 30 ? 'warn' : 'error';
+  const supportedCodecs = codecs.filter(codec => codec.supported).length;
+  const hlsPlayable = hlsSupport.nativeHls || hlsSupport.mediaSource;
+  const drmSupported = drm ? drm.some(level => level.supported) : null;
+  const latencies = keyLog.map(entry => entry.latencyMs).filter((v): v is number => v !== null);
+  const averageLatency = latencies.length > 0 ? Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length) : null;
+  const latencyTone = (ms: number | null): TvTone => (ms === null ? 'off' : ms <= 50 ? 'ok' : ms <= 100 ? 'warn' : 'error');
+
+  const tabTone: Record<TabId, TvTone> = {
+    detection: detection.isTv ? 'ok' : 'warn',
+    ecran: 'off',
+    codecs: !hlsPlayable ? 'error' : drmSupported === false ? 'warn' : drmSupported === null ? 'off' : 'ok',
+    telecommande: keyLog.length > 0 ? latencyTone(averageLatency) : 'off',
+    lecture: playbackError ? 'error' : stats && dropRate > 2 ? 'error' : fpsTone,
+  };
+
+  const isTab = (id: TabId) => tab === id;
+  const physicalWidth = Math.round(viewport.innerWidth * viewport.devicePixelRatio);
+  const physicalHeight = Math.round(viewport.innerHeight * viewport.devicePixelRatio);
+  const lastKey = keyLog[0];
 
   return (
-    <div className="movix-tv-diag min-h-screen bg-[#0a0a0a] text-white">
+    <div className="movix-tv-diag relative h-screen overflow-hidden bg-movix-ink text-white">
       {/* Cadre de sûreté à 5 % : s'il est coupé, la TV applique de l'overscan et
           toute l'interface devra respecter cette marge. Étiqueté, parce que sans
-          légende il se lit comme un curseur de focus. */}
-      <div className="pointer-events-none fixed inset-[5%] z-50 rounded-lg border-2 border-dashed border-amber-400/40">
-        <span className="absolute -top-3 left-4 bg-[#0a0a0a] px-2 text-sm font-semibold uppercase tracking-wider text-amber-400/70">
-          zone de sûreté 5 % — pas un curseur
-        </span>
-      </div>
+          légende il se lit comme un curseur de focus. Affiché à la demande
+          (onglet Écran) : en permanence, il passait sur l'en-tête. */}
+      {showSafeZone && (
+        <div className="pointer-events-none fixed inset-[5%] z-50 rounded-lg border-2 border-dashed border-amber-400/60">
+          <span className="absolute -bottom-3 right-4 rounded bg-movix-ink px-2 text-[12px] font-bold uppercase tracking-wider text-amber-400/80">
+            zone de sûreté 5 % — pas un curseur
+          </span>
+        </div>
+      )}
 
       {stressEnabled && (
         <>
@@ -298,204 +386,342 @@ const TvDiagnosticsPage: React.FC = () => {
         }
       `}</style>
 
-      <div className="relative z-30 mx-auto max-w-[1600px] px-[6%] py-12">
-        <header className="mb-10">
-          <h1 className="text-4xl font-black tracking-tight">Diagnostic TV — Movix</h1>
-          <p className="mt-2 text-xl text-white/50">
-            Phase 0 : validation matérielle avant construction de l'interface TV.
-          </p>
-        </header>
+      {/* Budget vertical (540 px) : en-tête 132, onglets 56, marge basse 20 ;
+          reste 316 px par panneau. Le plus haut, Lecture HLS, en prend ≈ 294
+          (vidéo 225 + adresse 44 à gauche ; boutons, six mesures et la note
+          à droite). */}
+      <div
+        className="relative z-30 flex h-full flex-col pb-5"
+        style={{ paddingLeft: TV_SAFE_X, paddingRight: TV_SAFE_X, paddingTop: 24 }}>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            {...focusable()}
+            aria-label="Retour"
+            onClick={() => navigate('/tvapp/settings')}
+            className={
+              'flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-white/10 pl-2.5 pr-4 text-white outline-none transition-transform duration-150 ' +
+              'focus:scale-105 focus:bg-tv-focus focus:text-tv-on-focus'
+            }>
+            <TvIcon name="back" size={18} />
+            <span className="text-[14px] font-semibold">Retour</span>
+          </button>
+          <span className="truncate text-[13px] text-white/40">Paramètres</span>
+        </div>
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <Panel title="1 · Détection">
-            <Row label="Mode TV actif">
-              <Verdict ok={detection.isTv} />
-            </Row>
-            <Row label="Source de la détection">{detection.source}</Row>
-            <Row label="Bridge natif présent">
-              <Verdict ok={detection.hasNativeBridge} />
-            </Row>
-            <Row label="Classe .movix-tv sur &lt;html&gt;">
-              <Verdict ok={document.documentElement.classList.contains('movix-tv')} />
-            </Row>
-            <div className="mt-4 break-all rounded-lg bg-black/40 p-4 text-base text-white/70">
-              {detection.userAgent || '—'}
-            </div>
-            <div className="mt-4 flex gap-4">
-              <TvButton
-                onClick={() => {
-                  setTvOverride(!detection.isTv);
-                  window.location.reload();
-                }}
-              >
-                Forcer {detection.isTv ? 'OFF' : 'ON'}
-              </TvButton>
-              <TvButton
-                onClick={() => {
-                  setTvOverride(null);
-                  window.location.reload();
-                }}
-              >
-                Effacer l'override
-              </TvButton>
-            </div>
-          </Panel>
-
-          <Panel title="2 · Écran & viewport">
-            <Row label="Viewport CSS">
-              {viewport.innerWidth} × {viewport.innerHeight} px
-            </Row>
-            <Row label="devicePixelRatio">{viewport.devicePixelRatio}</Row>
-            <Row label="screen">
-              {viewport.screenWidth} × {viewport.screenHeight} px
-            </Row>
-            <Row label="Pixels physiques estimés">
-              {Math.round(viewport.innerWidth * viewport.devicePixelRatio)} ×{' '}
-              {Math.round(viewport.innerHeight * viewport.devicePixelRatio)}
-            </Row>
-            <p className="mt-4 text-base leading-relaxed text-white/50">
-              C'est le viewport CSS qui détermine l'échelle de l'interface. Un
-              1920×1080 physique exposé en 960×540 CSS impose de diviser par deux
-              toutes les tailles prévues.
+        <div className="mt-4 flex items-end justify-between gap-6">
+          <div className="min-w-0">
+            <h1 className="text-[26px] font-black leading-tight tracking-tight">Diagnostic matériel</h1>
+            <p className="mt-1 max-w-[640px] text-[14px] leading-snug text-white/55">
+              Ce que ce téléviseur sait faire, mesuré sur place. OK sur un onglet pour l’afficher.
             </p>
-          </Panel>
+          </div>
+          <span className="flex shrink-0 items-center gap-2 text-[13px] text-white/55">
+            <TvStatusDot tone={fpsTone} />
+            Interface : <span className="font-semibold tabular-nums text-white">{fps.current} i/s</span>
+          </span>
+        </div>
 
-          <Panel title="3 · Codecs & DRM">
-            {codecs.map(codec => (
-              <Row key={codec.mimeType} label={codec.label}>
-                <Verdict ok={codec.supported} />
-              </Row>
-            ))}
-            <div className="my-4 h-px bg-white/10" />
-            <Row label="HLS natif">
-              <Verdict ok={hlsSupport.nativeHls} />
-            </Row>
-            <Row label="MediaSource (hls.js)">
-              <Verdict ok={hlsSupport.mediaSource} />
-            </Row>
-            <Row label="MPEG-TS dans MSE">
-              <Verdict ok={hlsSupport.mpegTsInMse}>
-                {hlsSupport.mpegTsInMse ? 'oui' : 'non (transmux requis)'}
-              </Verdict>
-            </Row>
-            <div className="my-4 h-px bg-white/10" />
-            {/* EME exige un contexte sécurisé. http://localhost en est un : si
-                cette ligne dit oui, un échec Widevine vient bien de la WebView
-                et non de l'origine. */}
-            <Row label="Contexte sécurisé (requis par EME)">
-              <Verdict ok={window.isSecureContext} />
-            </Row>
-            <Row label="API requestMediaKeySystemAccess">
-              <Verdict ok={typeof navigator.requestMediaKeySystemAccess === 'function'} />
-            </Row>
-            {drm === null ? (
-              <p className="text-lg text-white/50">Sonde Widevine en cours…</p>
-            ) : (
-              drm.map(level => (
-                <Row key={level.label} label={level.label}>
-                  <Verdict ok={level.supported} />
-                  {level.error && (
-                    <span className="ml-2 block text-sm font-normal text-amber-400">
-                      {level.error}
-                    </span>
-                  )}
-                </Row>
-              ))
-            )}
-          </Panel>
-
-          <Panel title="4 · Télécommande">
-            <p className="mb-4 text-base leading-relaxed text-white/50">
-              Appuie sur les flèches, OK, Retour, puis sur lecture/pause et avance
-              rapide. Les flèches doivent déplacer le focus ci-dessous ; les touches
-              média doivent apparaître avec la mention « bridge natif ».
-            </p>
-            <div className="mb-6 grid grid-cols-4 gap-3">
-              {Array.from({ length: 12 }, (_, index) => (
-                <TvButton key={index} onClick={() => pushKeyLog('OK', `case ${index + 1}`)}>
-                  {index + 1}
-                </TvButton>
-              ))}
-            </div>
-            <div className="max-h-[320px] overflow-y-auto rounded-lg bg-black/40 p-4">
-              {keyLog.length === 0 ? (
-                <p className="text-lg text-white/40">Aucune touche captée pour l'instant.</p>
-              ) : (
-                keyLog.map(entry => (
-                  <div
-                    key={entry.id}
-                    className="flex items-baseline justify-between gap-4 border-b border-white/5 py-2 text-base last:border-b-0"
-                  >
-                    <span className="font-bold text-movix-red-bright">{entry.label}</span>
-                    <span className="flex-1 text-white/50">{entry.detail}</span>
-                    <span className="tabular-nums text-white/70">
-                      {entry.latencyMs === null ? '…' : `${entry.latencyMs} ms`}
-                    </span>
-                  </div>
-                ))
+        <div className="mt-5 flex items-center gap-2">
+          {TABS.map((entry, index) => (
+            <button
+              key={entry.id}
+              ref={index === 0 ? firstTabRef : undefined}
+              type="button"
+              {...focusable()}
+              aria-pressed={isTab(entry.id)}
+              onClick={() => setTab(entry.id)}
+              className={
+                'group relative flex h-9 items-center gap-2 rounded-full px-4 text-[15px] font-semibold outline-none transition-transform duration-150 ' +
+                'focus:scale-105 focus:bg-tv-focus focus:text-tv-on-focus ' +
+                (isTab(entry.id) ? 'bg-white/[0.14] text-white' : 'bg-transparent text-white/60')
+              }>
+              <TvIcon name={entry.icon} size={17} />
+              {entry.label}
+              <TvStatusDot tone={tabTone[entry.id]} />
+              {isTab(entry.id) && (
+                <span className="absolute inset-x-4 -bottom-1 h-[3px] rounded-full bg-movix-red group-focus:hidden" aria-hidden />
               )}
-            </div>
-          </Panel>
+            </button>
+          ))}
+        </div>
 
-          <Panel title="5 · Lecture HLS & performance" className="lg:col-span-2">
-            <div className="grid grid-cols-1 gap-8 lg:grid-cols-[2fr_1fr]">
-              <div>
-                <video
-                  ref={videoRef}
-                  playsInline
-                  controls={false}
-                  className="aspect-video w-full rounded-xl bg-black"
-                />
-                <input
-                  type="url"
-                  value={streamUrl}
-                  onChange={event => setStreamUrl(event.target.value)}
-                  data-tv-focusable=""
-                  spellCheck={false}
-                  className="mt-4 w-full rounded-lg border-2 border-white/15 bg-black/40 px-4 py-3 text-base outline-none focus:border-movix-red-bright"
-                />
-                <div className="mt-4 flex flex-wrap gap-4">
-                  <TvButton onClick={() => void startPlayback()}>Lire</TvButton>
-                  <TvButton onClick={teardownPlayback}>Arrêter</TvButton>
-                  <TvButton onClick={() => setStressEnabled(value => !value)}>
-                    Stress CSS : {stressEnabled ? 'ON' : 'OFF'}
-                  </TvButton>
+        <div className="mt-4 min-h-0 flex-1">
+          {/* 1 · Détection */}
+          {isTab('detection') && (
+            <div className="flex h-full gap-6">
+              <div className="w-[400px] shrink-0">
+                <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.04] p-4">
+                  <span
+                    className={
+                      'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ' +
+                      (detection.isTv ? 'bg-emerald-400/15 text-emerald-300' : 'bg-amber-400/15 text-amber-300')
+                    }>
+                    <TvIcon name={detection.isTv ? 'check' : 'alert'} size={24} strokeWidth={2.5} />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-[18px] font-bold leading-tight">
+                      {detection.isTv ? 'Téléviseur détecté' : 'Navigateur non-TV'}
+                    </p>
+                    <p className="mt-0.5 truncate text-[13px] text-white/55">Source : {detection.source}</p>
+                  </div>
                 </div>
-                {playbackError && (
-                  <p className="mt-4 rounded-lg bg-red-500/15 p-4 text-lg text-red-300">
-                    {playbackError}
-                  </p>
+                <div className="mt-3">
+                  <Row label="Mode TV actif">
+                    <Verdict ok={detection.isTv} />
+                  </Row>
+                  <Row label="Bridge natif présent">
+                    <Verdict ok={detection.hasNativeBridge} />
+                  </Row>
+                  <Row label={<>Classe <code className="font-mono text-[13px]">.movix-tv</code> sur &lt;html&gt;</>}>
+                    <Verdict ok={document.documentElement.classList.contains('movix-tv')} />
+                  </Row>
+                </div>
+              </div>
+              <div className="min-w-0 flex-1">
+                <TvSectionLabel>User-agent</TvSectionLabel>
+                <p className="max-h-[104px] overflow-hidden break-all rounded-xl bg-black/30 p-3 font-mono text-[12px] leading-relaxed text-white/65">
+                  {detection.userAgent || '—'}
+                </p>
+                <TvSectionLabel className="mt-4">Forçage du mode TV</TvSectionLabel>
+                <div className="flex gap-2">
+                  <DiagButton
+                    icon="target"
+                    label={`Forcer ${detection.isTv ? 'OFF' : 'ON'}`}
+                    onClick={() => {
+                      setTvOverride(!detection.isTv);
+                      window.location.reload();
+                    }}
+                  />
+                  <DiagButton
+                    icon="reset"
+                    label="Effacer le forçage"
+                    onClick={() => {
+                      setTvOverride(null);
+                      window.location.reload();
+                    }}
+                  />
+                </div>
+                <p className="mt-2 text-[12px] text-white/40">Les deux boutons rechargent la page.</p>
+              </div>
+            </div>
+          )}
+
+          {/* 2 · Écran & viewport */}
+          {isTab('ecran') && (
+            <div className="flex h-full flex-col">
+              <div className="grid grid-cols-4 gap-2">
+                <StatTile large label="Viewport CSS" value={`${viewport.innerWidth} × ${viewport.innerHeight}`} sub="px CSS" />
+                <StatTile large label="Densité" value={viewport.devicePixelRatio} sub="devicePixelRatio" />
+                <StatTile large label="Écran" value={`${viewport.screenWidth} × ${viewport.screenHeight}`} sub="window.screen" />
+                <StatTile large label="Pixels physiques" value={`${physicalWidth} × ${physicalHeight}`} sub="estimés" />
+              </div>
+              <p className="mt-4 max-w-[640px] text-[14px] leading-relaxed text-white/55">
+                C’est le viewport CSS qui fixe l’échelle de l’interface. Un 1920×1080 physique exposé en 960×540 CSS
+                impose de diviser par deux toutes les tailles prévues.
+              </p>
+              <button
+                type="button"
+                {...focusable()}
+                aria-pressed={showSafeZone}
+                onClick={() => setShowSafeZone(value => !value)}
+                className={'mt-4 flex w-[460px] items-center gap-3 rounded-xl px-3.5 py-2.5 text-left ' + PRESSABLE}>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[16px] font-bold leading-tight">Zone de sûreté 5 %</span>
+                  <span className="mt-0.5 block truncate text-[13px] opacity-60">
+                    Cadre pointillé : s’il est coupé, le téléviseur rogne les bords.
+                  </span>
+                </span>
+                <TvToggle on={showSafeZone} />
+              </button>
+            </div>
+          )}
+
+          {/* 3 · Codecs & DRM */}
+          {isTab('codecs') && (
+            <div className="flex h-full gap-6">
+              <div className="min-w-0 flex-1">
+                <TvSectionLabel>
+                  Codecs · {supportedCodecs} / {codecs.length} pris en charge
+                </TvSectionLabel>
+                <div className="grid grid-cols-3 gap-2">
+                  {codecs.map(codec => (
+                    <div
+                      key={codec.mimeType}
+                      title={codec.mimeType}
+                      className="flex min-w-0 items-center gap-2 rounded-lg bg-white/[0.04] px-3 py-2">
+                      <TvStatusDot tone={codec.supported ? 'ok' : 'error'} />
+                      <span className={'min-w-0 truncate text-[13px] font-semibold ' + (codec.supported ? '' : 'text-white/50 line-through')}>
+                        {codec.label}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                {/* Sous les codecs et non dans la colonne DRM : à droite, les
+                    neuf mesures empilées dépassaient les 540 px (Widevine L3
+                    sortait de 34 px sous le bas de l'écran, Edenwood, 11/10/2026). */}
+                <TvSectionLabel className="mt-4">Lecture HLS</TvSectionLabel>
+                <div className="max-w-[420px]">
+                  <Row label="HLS natif">
+                    <Verdict ok={hlsSupport.nativeHls} />
+                  </Row>
+                  <Row label="MediaSource (hls.js)">
+                    <Verdict ok={hlsSupport.mediaSource} />
+                  </Row>
+                  <Row label="MPEG-TS dans MSE">
+                    <Verdict ok={hlsSupport.mpegTsInMse}>{hlsSupport.mpegTsInMse ? 'oui' : 'transmux'}</Verdict>
+                  </Row>
+                </div>
+              </div>
+              <div className="w-[300px] shrink-0">
+                <TvSectionLabel>DRM</TvSectionLabel>
+                {/* EME exige un contexte sécurisé. http://localhost en est un : si
+                    cette ligne dit oui, un échec Widevine vient bien de la WebView
+                    et non de l'origine. */}
+                <Row label="Contexte sécurisé (EME)">
+                  <Verdict ok={window.isSecureContext} />
+                </Row>
+                <Row label="requestMediaKeySystemAccess">
+                  <Verdict ok={typeof navigator.requestMediaKeySystemAccess === 'function'} />
+                </Row>
+                {drm === null ? (
+                  <p className="py-1.5 text-[14px] text-white/50">Sonde Widevine en cours…</p>
+                ) : (
+                  drm.map(level => (
+                    <div key={level.label}>
+                      <Row label={level.label}>
+                        <Verdict ok={level.supported} />
+                      </Row>
+                      {level.error && <p className="-mt-1 mb-1 truncate text-[12px] text-amber-300/90">{level.error}</p>}
+                    </div>
+                  ))
                 )}
               </div>
+            </div>
+          )}
 
-              <div>
-                <Row label="FPS interface">
-                  <span className={fps.current >= 50 ? 'text-emerald-400' : fps.current >= 30 ? 'text-amber-400' : 'text-red-400'}>
-                    {fps.current}
-                  </span>
-                </Row>
-                <Row label="Pire seconde">{fps.worst}</Row>
-                <Row label="Résolution vidéo">{stats?.resolution ?? '—'}</Row>
-                <Row label="Palier HLS">{stats?.level ?? '—'}</Row>
-                <Row label="Buffer d'avance">{stats?.buffered ?? '—'}</Row>
-                <Row label="Frames droppées">
-                  {stats ? (
-                    <span className={dropRate > 2 ? 'text-red-400' : 'text-emerald-400'}>
-                      {stats.droppedFrames} / {stats.totalFrames} ({dropRate.toFixed(1)} %)
-                    </span>
-                  ) : (
-                    '—'
-                  )}
-                </Row>
-                <p className="mt-4 text-base leading-relaxed text-white/50">
-                  Active le stress CSS pendant la lecture : c'est le test décisif
-                  pour savoir si l'interface TV peut se permettre des animations et
-                  des flous. Une chute sous 30 fps, ou plus de 2 % de frames
-                  droppées, condamne les effets.
+          {/* 4 · Télécommande */}
+          {isTab('telecommande') && (
+            <div className="flex h-full gap-6">
+              <div className="w-[340px] shrink-0">
+                <p className="text-[13px] leading-snug text-white/55">
+                  Flèches, OK, Retour, puis lecture/pause et avance rapide. Les flèches déplacent le focus dans la
+                  grille ; les touches média arrivent par le bridge natif.
                 </p>
+                <div className="mt-3 grid grid-cols-4 gap-2">
+                  {Array.from({ length: 12 }, (_, index) => (
+                    <button
+                      key={index}
+                      type="button"
+                      {...focusable()}
+                      onClick={() => pushKeyLog('OK', `case ${index + 1}`)}
+                      className={'h-11 rounded-lg text-[16px] font-bold tabular-nums ' + PRESSABLE}>
+                      {index + 1}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex min-w-0 flex-1 flex-col">
+                <div className="flex items-center gap-4 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3">
+                  {lastKey ? (
+                    <>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-white/40">Dernière touche</p>
+                        <p className="truncate text-[26px] font-black leading-tight text-movix-red-bright">{lastKey.label}</p>
+                        <p className="truncate font-mono text-[12px] text-white/50">{lastKey.detail}</p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className={'text-[22px] font-black tabular-nums ' + toneText[latencyTone(lastKey.latencyMs)]}>
+                          {lastKey.latencyMs === null ? '…' : `${lastKey.latencyMs} ms`}
+                        </p>
+                        <p className="text-[12px] text-white/45">
+                          {averageLatency === null ? 'appui → image' : `moyenne ${averageLatency} ms`}
+                        </p>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex items-center gap-3 py-2 text-white/45">
+                      <TvIcon name="remote" size={22} />
+                      <p className="text-[15px]">Aucune touche captée pour l’instant.</p>
+                    </div>
+                  )}
+                </div>
+                <div className="mt-2 min-h-0 flex-1 overflow-hidden">
+                  {keyLog.slice(1).map(entry => (
+                    <div key={entry.id} className="flex items-baseline gap-3 border-b border-white/[0.06] py-1 text-[13px] last:border-b-0">
+                      <span className="w-24 shrink-0 truncate font-bold">{entry.label}</span>
+                      <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-white/45">{entry.detail}</span>
+                      <span className={'shrink-0 tabular-nums ' + toneText[latencyTone(entry.latencyMs)]}>
+                        {entry.latencyMs === null ? '…' : `${entry.latencyMs} ms`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
-          </Panel>
+          )}
+
+          {/* 5 · Lecture HLS & performance. Toujours monté, masqué hors de son
+              onglet : la vidéo doit continuer de jouer, et ses statistiques
+              d'être relevées, quand on regarde un autre onglet. */}
+          <div className={isTab('lecture') ? 'flex h-full gap-6' : 'hidden'}>
+            <div className="w-[400px] shrink-0">
+              <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-black">
+                <video ref={videoRef} playsInline controls={false} className="h-full w-full" />
+                {!isPlaying && (
+                  <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 text-white/45">
+                    <TvIcon name="play" size={28} />
+                    <p className="text-[13px]">Flux de test Apple · OK sur Lire</p>
+                  </div>
+                )}
+              </div>
+              <input
+                type="url"
+                value={streamUrl}
+                onChange={event => setStreamUrl(event.target.value)}
+                {...focusable(isTab('lecture'))}
+                spellCheck={false}
+                aria-label="Adresse du flux HLS"
+                className="mt-2 h-9 w-full rounded-lg border-2 border-white/15 bg-black/30 px-3 font-mono text-[12px] text-white/80 outline-none focus:border-tv-focus"
+              />
+            </div>
+            <div className="flex min-w-0 flex-1 flex-col">
+              <div className="flex gap-2">
+                <DiagButton visible={isTab('lecture')} icon="play" label="Lire" onClick={() => void startPlayback()} />
+                <DiagButton visible={isTab('lecture')} icon="stop" label="Arrêter" onClick={teardownPlayback} />
+                <DiagButton
+                  visible={isTab('lecture')}
+                  icon="sparkles"
+                  label={<>Stress CSS <TvToggle on={stressEnabled} /></>}
+                  ariaLabel={`Stress CSS : ${stressEnabled ? 'activé' : 'désactivé'}`}
+                  onClick={() => setStressEnabled(value => !value)}
+                />
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <StatTile label="FPS interface" value={fps.current} tone={fpsTone} />
+                <StatTile label="Pire seconde" value={fps.worst} />
+                <StatTile label="Résolution vidéo" value={stats?.resolution ?? '—'} />
+                <StatTile label="Palier HLS" value={stats?.level ?? '—'} />
+                <StatTile label="Buffer d’avance" value={stats?.buffered ?? '—'} />
+                <StatTile
+                  label="Frames droppées"
+                  value={stats ? `${stats.droppedFrames} / ${stats.totalFrames} (${dropRate.toFixed(1)} %)` : '—'}
+                  tone={stats ? (dropRate > 2 ? 'error' : 'ok') : undefined}
+                />
+              </div>
+              {playbackError ? (
+                <p className="mt-3 flex items-start gap-2 rounded-xl border border-red-400/30 bg-red-400/10 px-3 py-2 text-[13px] text-red-200" role="status">
+                  <TvIcon name="alert" size={16} className="mt-px shrink-0" />
+                  <span className="min-w-0 break-words">{playbackError}</span>
+                </p>
+              ) : (
+                <p className="mt-3 text-[12px] leading-snug text-white/45">
+                  Active le stress CSS pendant la lecture : sous 30 i/s, ou au-delà de 2 % de frames droppées,
+                  l’interface ne peut pas se permettre d’animations ni de flous.
+                </p>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>

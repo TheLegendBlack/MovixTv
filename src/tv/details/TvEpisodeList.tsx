@@ -145,7 +145,7 @@ const TvEpisodeRow: React.FC<{
       // un contour extérieur serait coupé sur la première et la dernière ligne.
       className={
         'absolute left-0 right-0 flex gap-[14px] rounded-xl outline-none transition-colors duration-150 ' +
-        (focused ? 'bg-white/[0.08] ring-2 ring-inset ring-white' : '')
+        (focused ? 'bg-white/[0.08] ring-2 ring-inset ring-tv-focus' : '')
       }
       style={{ top: offset, height: ROW_HEIGHT, padding: ROW_PADDING }}>
       <div
@@ -172,7 +172,7 @@ const TvEpisodeRow: React.FC<{
 
         {focused && (
           <div className="absolute inset-0 flex items-center justify-center">
-            <span className="flex h-[28px] w-[28px] items-center justify-center rounded-full bg-white/90 text-[#0a0a0a]">
+            <span className="flex h-[28px] w-[28px] items-center justify-center rounded-full bg-tv-focus/90 text-tv-on-focus">
               <Play size={13} strokeWidth={2.6} />
             </span>
           </div>

@@ -1,25 +1,20 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
+import { MotionGlobalConfig } from 'framer-motion';
+import {
+  ANIMATION_PREF_KEYS, ANIMATION_PREF_META, DEFAULT_ANIMATION_PREFS, LIGHT_MODE_STORAGE_KEY,
+  getAutoLightModeReason, parseLightModeSetting, resolveAnimationPrefs,
+  type AnimationPrefKey, type AnimationPrefs, type AutoLightModeReason, type LightModeSetting,
+} from '@/utils/animationPreferences';
+import { PERF_TIER_KEY } from '@/tv/devicePerformance';
 
-type LightModeSetting = 'auto' | 'on' | 'off';
-
-export type AnimationPrefKey =
-  | 'bgAnimations'
-  | 'loadingAnimations'
-  | 'carouselAutoplay'
-  | 'blurEffects'
-  | 'transitions';
-
-export interface AnimationPrefs {
-  bgAnimations: boolean;
-  loadingAnimations: boolean;
-  carouselAutoplay: boolean;
-  blurEffects: boolean;
-  transitions: boolean;
-}
+export type { AnimationPrefKey, AnimationPrefs } from '@/utils/animationPreferences';
 
 interface LightModeContextType {
   isLightMode: boolean;
   lightModeSetting: LightModeSetting;
+  autoReason: AutoLightModeReason;
+  systemReducedMotion: boolean;
+  storageUnavailable: boolean;
   setLightModeSetting: (setting: LightModeSetting) => void;
   prefs: AnimationPrefs;
   effectivePrefs: AnimationPrefs;
@@ -29,145 +24,129 @@ interface LightModeContextType {
 
 const LightModeContext = createContext<LightModeContextType | undefined>(undefined);
 
-// Each pref maps to a localStorage key and a `data-*` attribute on <html>.
-// Keeping the attribute name short — it ends up on every CSS selector.
-const PREF_META: Record<AnimationPrefKey, { storageKey: string; attr: string }> = {
-  bgAnimations:      { storageKey: 'settings_anim_bg',         attr: 'data-no-bg-anim' },
-  loadingAnimations: { storageKey: 'settings_anim_loading',    attr: 'data-no-loading-anim' },
-  carouselAutoplay:  { storageKey: 'settings_anim_carousel',   attr: 'data-no-carousel-anim' },
-  blurEffects:       { storageKey: 'settings_anim_blur',       attr: 'data-no-blur' },
-  transitions:       { storageKey: 'settings_anim_transitions', attr: 'data-no-transitions' },
-};
-
-const DEFAULT_PREFS: AnimationPrefs = {
-  bgAnimations: true,
-  loadingAnimations: true,
-  carouselAutoplay: true,
-  blurEffects: true,
-  transitions: true,
-};
-
-function readPref(key: AnimationPrefKey): boolean {
-  const raw = localStorage.getItem(PREF_META[key].storageKey);
-  if (raw === null) return DEFAULT_PREFS[key];
-  return raw !== 'false';
+function readPreferences() {
+  const prefs = { ...DEFAULT_ANIMATION_PREFS };
+  let setting: LightModeSetting = 'auto';
+  let storageUnavailable = false;
+  try {
+    setting = parseLightModeSetting(localStorage.getItem(LIGHT_MODE_STORAGE_KEY));
+    for (const key of ANIMATION_PREF_KEYS) {
+      prefs[key] = localStorage.getItem(ANIMATION_PREF_META[key].storageKey) !== 'false';
+    }
+  } catch {
+    // Le stockage peut être bloqué : le mode automatique reste utilisable.
+    storageUnavailable = true;
+  }
+  return { setting, prefs, storageUnavailable };
 }
 
-function detectWeakDevice(): boolean {
-  const ua = navigator.userAgent.toLowerCase();
-  if (ua.includes('tizen') || ua.includes('webos') || ua.includes('web0s') ||
-      ua.includes('smarttv') || ua.includes('smart-tv') || ua.includes('nettv') ||
-      ua.includes('appletv') || ua.includes('roku') || ua.includes('firetv') ||
-      ua.includes('philipstv') || ua.includes('hbbtv')) {
-    return true;
-  }
-  if (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2) {
-    return true;
-  }
-  if ((navigator as Navigator & { deviceMemory?: number }).deviceMemory &&
-      (navigator as Navigator & { deviceMemory?: number }).deviceMemory! <= 2) {
-    return true;
-  }
-  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
-    return true;
-  }
-  // Palier mesuré sur l'interface téléviseur (src/tv/devicePerformance.ts) :
-  // un appareil qui annonce des cœurs et de la mémoire mais ne tient pas
-  // trente images par seconde est faible, quoi qu'il déclare.
+function persist(key: string, value: string | null) {
   try {
-    if (localStorage.getItem('movix:tv:perf-tier') === 'slow') return true;
-  } catch { /* stockage indisponible : on s'en tient aux signaux déclaratifs */ }
-  return false;
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
+    return true;
+  } catch {
+    // Le choix reste actif dans cette session si le stockage est indisponible.
+    return false;
+  }
 }
 
 export const LightModeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [lightModeSetting, setLightModeSettingState] = useState<LightModeSetting>(() => {
-    return (localStorage.getItem('settings_light_mode') as LightModeSetting) || 'auto';
+  const [stored, setStored] = useState(readPreferences);
+  const [motionQuery] = useState(() => typeof window === 'undefined'
+    ? undefined : window.matchMedia?.('(prefers-reduced-motion: reduce)'));
+  const [systemReducedMotion, setSystemReducedMotion] = useState(() => motionQuery?.matches ?? false);
+  const { setting: lightModeSetting, prefs, storageUnavailable } = stored;
+  // Lu une fois par montage : le palier ne change qu'au lancement suivant
+  // (voir `tv/devicePerformance.ts`).
+  const [measuredSlow] = useState(() => {
+    try { return localStorage.getItem(PERF_TIER_KEY) === 'slow'; } catch { return false; }
   });
+  const autoReason = getAutoLightModeReason(typeof navigator === 'undefined' ? {} : navigator, systemReducedMotion, measuredSlow);
+  const isLightMode = lightModeSetting === 'on' || (lightModeSetting === 'auto' && autoReason !== null);
+  const effectivePrefs = useMemo(
+    () => resolveAnimationPrefs(prefs, isLightMode, systemReducedMotion),
+    [prefs, isLightMode, systemReducedMotion],
+  );
 
-  const [prefs, setPrefsState] = useState<AnimationPrefs>(() => ({
-    bgAnimations: readPref('bgAnimations'),
-    loadingAnimations: readPref('loadingAnimations'),
-    carouselAutoplay: readPref('carouselAutoplay'),
-    blurEffects: readPref('blurEffects'),
-    transitions: readPref('transitions'),
-  }));
-
-  const isLightMode = useMemo(() => {
-    if (lightModeSetting === 'on') return true;
-    if (lightModeSetting === 'off') return false;
-    return detectWeakDevice();
-  }, [lightModeSetting]);
-
-  // Effective prefs: light mode ON forces every category to "disabled" (false)
-  // regardless of the user's granular state. Granular state is preserved so the
-  // user gets it back when they turn light mode off.
-  const effectivePrefs: AnimationPrefs = useMemo(() => {
-    if (isLightMode) {
-      return {
-        bgAnimations: false,
-        loadingAnimations: false,
-        carouselAutoplay: false,
-        blurEffects: false,
-        transitions: false,
-      };
+  useEffect(() => {
+    if (!motionQuery) return;
+    const update = () => setSystemReducedMotion(motionQuery.matches);
+    update();
+    if (motionQuery.addEventListener) {
+      motionQuery.addEventListener('change', update);
+      return () => motionQuery.removeEventListener('change', update);
     }
-    return prefs;
-  }, [isLightMode, prefs]);
+    motionQuery.addListener(update);
+    return () => motionQuery.removeListener(update);
+  }, [motionQuery]);
+
+  useEffect(() => {
+    const sync = (event: Event) => {
+      if (event instanceof StorageEvent && event.key !== null && event.key !== LIGHT_MODE_STORAGE_KEY
+        && !ANIMATION_PREF_KEYS.some((key) => ANIMATION_PREF_META[key].storageKey === event.key)) return;
+      const next = readPreferences();
+      if (next.storageUnavailable) {
+        setStored((prev) => ({ ...prev, storageUnavailable: true }));
+        return;
+      }
+      setStored((prev) => prev.setting === next.setting && ANIMATION_PREF_KEYS.every((key) => prev.prefs[key] === next.prefs[key])
+        ? prev : next);
+    };
+    window.addEventListener('storage', sync);
+    window.addEventListener('sync_storage_updated', sync);
+    return () => {
+      window.removeEventListener('storage', sync);
+      window.removeEventListener('sync_storage_updated', sync);
+    };
+  }, []);
 
   const setLightModeSetting = useCallback((setting: LightModeSetting) => {
-    setLightModeSettingState(setting);
-    localStorage.setItem('settings_light_mode', setting);
+    const saved = persist(LIGHT_MODE_STORAGE_KEY, setting);
+    setStored((prev) => ({ ...prev, setting, storageUnavailable: prev.storageUnavailable || !saved }));
   }, []);
 
   const setPref = useCallback((key: AnimationPrefKey, value: boolean) => {
-    setPrefsState((prev) => ({ ...prev, [key]: value }));
-    localStorage.setItem(PREF_META[key].storageKey, String(value));
+    const saved = persist(ANIMATION_PREF_META[key].storageKey, String(value));
+    setStored((prev) => ({ ...prev, prefs: { ...prev.prefs, [key]: value }, storageUnavailable: prev.storageUnavailable || !saved }));
   }, []);
 
   const resetPrefs = useCallback(() => {
-    setPrefsState(DEFAULT_PREFS);
-    (Object.keys(PREF_META) as AnimationPrefKey[]).forEach((key) => {
-      localStorage.removeItem(PREF_META[key].storageKey);
-    });
+    const results = ANIMATION_PREF_KEYS.map((key) => persist(ANIMATION_PREF_META[key].storageKey, null));
+    setStored((prev) => ({ ...prev, prefs: { ...DEFAULT_ANIMATION_PREFS }, storageUnavailable: prev.storageUnavailable || results.includes(false) }));
   }, []);
 
-  // Sync HTML attributes whenever effective state changes. Attributes drive
-  // the CSS in light-mode.css. Master `data-light-mode` is kept for legacy
-  // selectors and for any third-party CSS that reads it.
-  useEffect(() => {
+  useLayoutEffect(() => {
     const root = document.documentElement;
-    if (isLightMode) {
-      root.setAttribute('data-light-mode', 'true');
-    } else {
-      root.removeAttribute('data-light-mode');
+    if (isLightMode) root.setAttribute('data-light-mode', 'true');
+    else root.removeAttribute('data-light-mode');
+    for (const key of ANIMATION_PREF_KEYS) {
+      const { attr } = ANIMATION_PREF_META[key];
+      if (!effectivePrefs[key]) root.setAttribute(attr, 'true');
+      else root.removeAttribute(attr);
     }
-    (Object.keys(PREF_META) as AnimationPrefKey[]).forEach((key) => {
-      const attr = PREF_META[key].attr;
-      if (!effectivePrefs[key]) {
-        root.setAttribute(attr, 'true');
-      } else {
-        root.removeAttribute(attr);
-      }
-    });
+    // reducedMotion seul ne coupe ni les fondus, ni les délais explicites.
+    // Ce réglage public de Framer Motion saute aussi ces animations, sans
+    // remonter l'application ni interrompre une lecture en cours.
+    MotionGlobalConfig.skipAnimations = !effectivePrefs.transitions;
   }, [isLightMode, effectivePrefs]);
 
-  const value = useMemo(
-    () => ({ isLightMode, lightModeSetting, setLightModeSetting, prefs, effectivePrefs, setPref, resetPrefs }),
-    [isLightMode, lightModeSetting, setLightModeSetting, prefs, effectivePrefs, setPref, resetPrefs]
-  );
+  useLayoutEffect(() => () => {
+    document.documentElement.removeAttribute('data-light-mode');
+    for (const key of ANIMATION_PREF_KEYS) document.documentElement.removeAttribute(ANIMATION_PREF_META[key].attr);
+    MotionGlobalConfig.skipAnimations = false;
+  }, []);
 
-  return (
-    <LightModeContext.Provider value={value}>
-      {children}
-    </LightModeContext.Provider>
-  );
+  const value = useMemo(() => ({
+    isLightMode, lightModeSetting, autoReason, systemReducedMotion, storageUnavailable, setLightModeSetting,
+    prefs, effectivePrefs, setPref, resetPrefs,
+  }), [isLightMode, lightModeSetting, autoReason, systemReducedMotion, storageUnavailable, setLightModeSetting, prefs, effectivePrefs, setPref, resetPrefs]);
+
+  return <LightModeContext.Provider value={value}>{children}</LightModeContext.Provider>;
 };
 
 export const useLightMode = () => {
   const context = useContext(LightModeContext);
-  if (context === undefined) {
-    throw new Error('useLightMode must be used within a LightModeProvider');
-  }
+  if (context === undefined) throw new Error('useLightMode must be used within a LightModeProvider');
   return context;
 };

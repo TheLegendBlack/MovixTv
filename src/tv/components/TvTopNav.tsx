@@ -129,7 +129,7 @@ interface TvTopNavProps {
 /** Couleurs d'une pastille, partagées entre le groupe réel et sa doublure. */
 const pillClass = (focused: boolean, active: boolean): string =>
   'rounded-full outline-none transition-transform duration-150 ' +
-  (focused ? 'scale-105 bg-white text-black' : active ? 'bg-white/15 text-white' : 'text-white/80');
+  (focused ? 'scale-105 bg-tv-focus text-tv-on-focus' : active ? 'bg-white/15 text-white' : 'text-white/80');
 
 /** Boîte d'une pastille : carrée pour un glyphe, allongée pour un libellé. */
 const pillShape = (icon: boolean): string =>
@@ -141,7 +141,7 @@ const pillStyle = (focused: boolean, icon: boolean): React.CSSProperties => ({
   height: PILL_HEIGHT,
   width: icon ? PILL_HEIGHT : undefined,
   fontSize: icon ? undefined : FONT_SIZE,
-  boxShadow: focused ? '0 0 0 3px rgba(255,255,255,0.3)' : 'none',
+  boxShadow: focused ? '0 0 0 3px rgb(var(--tv-focus) / 0.3)' : 'none',
 });
 
 /**

@@ -73,9 +73,9 @@ node --test src/tv/__tests__/*.mjs src/tv/nav/__tests__/*.mjs   # tests du site 
 # que TypeScript 5.9 refuse ; passer par un fichier temporaire qui l'étend :
 echo '{ "extends": "./tsconfig.app.json", "compilerOptions": { "ignoreDeprecations": "5.0" } }' > tsconfig.check.json \
   && npx tsc --noEmit -p tsconfig.check.json; rm -f tsconfig.check.json
-# Le dépôt amont laisse ~40 erreurs de type dans HLSPlayer.tsx et
-# HLSPlayerSettingsPanel.tsx (namespace NodeJS, types hls.js) : comparer le
-# compte avant/après, ne pas viser zéro.
+# Le dépôt amont laisse des erreurs de type dans HLSPlayer*.tsx, WatchMovie,
+# WatchTv, sous-titres : 64 au 11/10/2026, une cinquantaine quand `@types/node`
+# est installé (il résout le namespace NodeJS). Comparer avant/après.
 
 # app/ (shell)
 npm start                        # Metro (port 8081)
@@ -103,9 +103,12 @@ src/
     TvCollection.tsx         # page « Voir plus » (grille + bandeau de prévisualisation)
     TvDetails.tsx, TvSearch.tsx, TvSettings.tsx, TvDiagnosticsPage.tsx
     tvScale.ts               # échelle de viewport (boîte 960×540 mise à l'échelle hors gabarit natif)
+    edition.tsx              # ce qui dépend de l'édition : démarrage, rangées des pages, routes et lignes de Paramètres
+    settings/                # écrans de réglages : kit, saisie des clés VIP et TMDB
     devicePerformance.ts     # palier de performance mesuré, lu par le mode léger
     components/              # TvTopNav, TvRow, TvCard, TvMoreCard, TvKeyboard, TvPreviewBanner
     data/tmdb.ts             # registre des rangées (ROWS) et listes par page (TV_*_ROWS)
+    data/pages.ts            # les quatre pages, leurs rangées par défaut et leur bannière
     nav/                     # moteur de focus : TvFocusProvider, resolveMove, hooks, focusRestore
     player/                  # useTvPlayerRemote (télécommande), contrôles, thème
   pages/Watch/               # WatchMovie, WatchTv (partagés avec le site amont)
@@ -148,6 +151,17 @@ public/movix.png             # seul asset public restant (sonde DNS du lecteur)
   l'auteur du site (`~/Downloads/Modif Movix Tv/`), appliquer le `.patch` avec
   `git apply` plutôt que d'écraser des fichiers complets qui datent d'avant
   nos ajouts locaux ; vérifier par `diff` que rien de local ne disparaît.
+- **Reprise du dépôt amont** (https://github.com/movixstream/MovixOpenSource,
+  nouvelle adresse depuis 10/2026) : fusion à trois voies fichier par fichier
+  (`git merge-file`), base = dernier commit amont déjà intégré, jamais une
+  copie brute. Dernier commit intégré : **`0e7cd86`** (08/10/2026), le
+  11/10/2026 ; sauvegarde d'avant fusion dans `.tv-backup/avant-maj-amont-2026-10/`.
+  Gardés volontairement à notre version : `vite.config.ts` (service worker,
+  bundle legacy, Sentry du site web), `ErrorBoundary.tsx` (la version amont
+  tire `@sentry/react`, trop lourd pour le SoC), `AdFreePlayerAds.tsx` (jamais
+  affiché sur TV), `TurnstileWidget.tsx`. Les fichiers ajoutés par l'amont ne
+  sont repris que s'ils sont importés (vérifier aussi `app/android/**`, où un
+  nouveau `.kt` manquant ne se voit qu'à la compilation Gradle).
 - **La clé VIP** vit dans `.env` (`VITE_DEV_ACCESS_CODE`, gitignoré), amorcée
   dans `localStorage` par `main.tsx` en développement seulement.
 - **Ce qui exige un nouvel APK** : `app/android/**` (Kotlin, manifeste,
@@ -160,11 +174,47 @@ public/movix.png             # seul asset public restant (sonde DNS du lecteur)
   `localStorage` : noter la valeur avant, la remettre après.
 - Ne rien lancer en tâche de fond qui occupe 8081 ou 3000.
 
+## Couleurs, rangées, réglages (10/2026)
+
+- **Couleurs** : jamais de couleur en dur dans `src/tv`. Fond `movix-ink`,
+  accent `movix-red` / `movix-red-bright`, pastille de focus `tv-focus` et son
+  texte `tv-on-focus` : jetons Tailwind adossés aux variables CSS `--tv-*`
+  (triplets RVB, défauts dans `src/index.css`). Dans un style en ligne :
+  `rgb(var(--tv-ink) / 0.5)`.
+- **Rangées** : les listes `TV_*_ROWS` de `tmdb.ts` sont les valeurs par
+  défaut, regroupées par page avec leur bannière dans `data/pages.ts` ; les
+  pages les lisent par `usePageRows(page)` (`tv/edition.tsx`).
+- **Clés** : clé VIP et clé TMDB saisissables dans Paramètres. La clé TMDB passe
+  par `src/config/tmdbKey.ts` (réglages d'abord, `.env` ensuite) ; les modules
+  la lisent à leur chargement, l'écran de saisie recharge donc la page.
+- Vérifier sans la TV : build puis Chrome sans interface à 960×540, densité 2
+  (méthode de comparaison des couleurs calculées avant/après).
+- **Page Paramètres** : six lignes au plus dans 540 px (mesuré le 11/10/2026,
+  la septième sortait de l'écran). Une nouvelle entrée en remplace une.
+
+
+## Site servi hors des domaines Movix (11/10/2026)
+
+- **Bloqueur natif** : il juge « tierce » toute requête dont le Referer n'est
+  pas un hôte autorisé. Le shell déclare donc les hôtes du site chargé
+  (`trustSiteUrls` dans `BrowserScreen`, méthode native synchrone
+  `trustSiteHost`) ; sans ça, TMDB recevait un 204 sans en-têtes CORS.
+- **API Movix** (`api.movix.men`) : liste d'origines CORS côté serveur Movix.
+  `localhost:3000` et `movix.men` y sont, pas une adresse d'hébergement propre
+  (préflight 403, mesuré le 11/10/2026) : VIP et sources échouent tant que
+  l'auteur de Movix n'a pas ajouté l'adresse. `proxiesembed` accepte `*`.
+- Essai d'un site hébergé sur la TV sans APK release : passer `DEV_SITE_URL`
+  (`app/src/config/index.ts`) sur son adresse, relancer l'app, puis remettre
+  `http://localhost:3000`.
+
 ## Variables d'environnement (`.env`, préfixe `VITE_`)
 
 Utilisées : `VITE_MAIN_API`, `VITE_TMDB_API_KEY`, `VITE_PROXIES_EMBED_API`,
-`VITE_SITE_URL`, `VITE_DEV_ACCESS_CODE`. Les autres entrées du fichier sont
-héritées du site web et sans effet ici.
+`VITE_SITE_URL`, `VITE_DEV_ACCESS_CODE`.
+
+**Jamais `VITE_TMDB_API_KEY` dans un build public** : elle serait lisible dans
+le bundle. Les autres entrées du fichier sont héritées du site web et sans
+effet ici.
 
 ## Portage en APK autonome (étape finale)
 
@@ -176,11 +226,10 @@ en l'état** : la procédure complète est dans `app/README.md`, section
   interroge rentry puis `address.json` du projet Movix : remplacer ce chemin par
   une adresse fixe, sinon le shell chargerait movix.men.
 - Le pont natif ne fait confiance qu'à une origine `https` : le site doit être
-  hébergé en HTTPS avec repli SPA. L'embarquer dans l'APK demanderait un
-  serveur local et une origine de confiance supplémentaire — pas direct.
-- `src/main.tsx` n'amorce la clé VIP qu'en développement : soit retirer la
-  garde `import.meta.env.DEV` (site privé), soit ajouter une saisie du code
-  d'accès dans `TvSettings` avec `TvKeyboard`.
+  hébergé en HTTPS avec repli SPA, à une adresse que l'API Movix accepte
+  (voir plus haut), et c'est elle qu'on fige dans le shell.
+- `src/main.tsx` n'amorce la clé VIP qu'en développement : en production,
+  elle se saisit dans Paramètres, Clé VIP Movix (même chose pour la clé TMDB).
 - `App.tsx` du shell vérifie `version.json` sur le dépôt GitHub de Movix et
   proposerait l'APK amont : forcer `updateSourceUrl = null` ou publier son
   propre manifeste (`npm run app:publish`).

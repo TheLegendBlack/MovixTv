@@ -449,7 +449,7 @@ const TvSearchSuggestion: React.FC<{
       }}
       className={
         'block h-7 w-full truncate rounded-md px-2 text-left text-[13px] outline-none ' +
-        (focused ? 'bg-white font-semibold text-black' : 'text-white/60')
+        (focused ? 'bg-tv-focus font-semibold text-tv-on-focus' : 'text-white/60')
       }>
       {item.title}
     </button>

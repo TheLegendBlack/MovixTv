@@ -455,8 +455,8 @@ const TvBrowse: React.FC<TvBrowseProps> = ({ rowIds, heroRowId, leading = null }
 
             {status === 'no-key' && (
               <TvNotice>
-                <strong className="font-semibold text-amber-300">VITE_TMDB_API_KEY</strong>{' '}
-                est absente du fichier .env — le catalogue ne peut pas être chargé.
+                Aucune <strong className="font-semibold text-amber-300">clé TMDB</strong> :
+                le catalogue ne peut pas être chargé. Renseignez-la dans Paramètres, Clé TMDB.
               </TvNotice>
             )}
 
@@ -565,20 +565,20 @@ const TvHeroBackdrop: React.FC<{ url: string | null }> = ({ url }) => {
         className="absolute inset-0"
         style={{
           backgroundImage:
-            'linear-gradient(to right, #0a0a0a 0%, rgba(10,10,10,0.92) 20%, rgba(10,10,10,0.55) 42%, rgba(10,10,10,0) 68%)',
+            'linear-gradient(to right, rgb(var(--tv-ink)) 0%, rgb(var(--tv-ink) / 0.92) 20%, rgb(var(--tv-ink) / 0.55) 42%, rgb(var(--tv-ink) / 0) 68%)',
         }}
       />
       <div
         className="absolute inset-x-0 bottom-0 h-40"
         style={{
-          backgroundImage: 'linear-gradient(to top, #0a0a0a 8%, rgba(10,10,10,0) 100%)',
+          backgroundImage: 'linear-gradient(to top, rgb(var(--tv-ink)) 8%, rgb(var(--tv-ink) / 0) 100%)',
         }}
       />
       <div
         className="absolute inset-x-0 top-0 h-24"
         style={{
           backgroundImage:
-            'linear-gradient(to bottom, rgba(10,10,10,0.75) 0%, rgba(10,10,10,0) 100%)',
+            'linear-gradient(to bottom, rgb(var(--tv-ink) / 0.75) 0%, rgb(var(--tv-ink) / 0) 100%)',
         }}
       />
     </div>
@@ -721,9 +721,9 @@ const TvHeroSlide: React.FC<{
           }}
           className={
             'relative rounded-full px-8 py-3 text-[17px] font-bold outline-none transition-transform duration-150 [text-shadow:none] ' +
-            (focused ? 'scale-[1.04] bg-white text-black' : 'bg-white/25 text-white')
+            (focused ? 'scale-[1.04] bg-tv-focus text-tv-on-focus' : 'bg-white/25 text-white')
           }
-          style={{ boxShadow: focused ? '0 0 0 3px rgba(255,255,255,0.35)' : 'none' }}>
+          style={{ boxShadow: focused ? '0 0 0 3px rgb(var(--tv-focus) / 0.35)' : 'none' }}>
           Voir la fiche
         </button>
       </div>

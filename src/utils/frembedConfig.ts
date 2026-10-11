@@ -3,15 +3,15 @@ import axios from 'axios';
 /**
  * Domaine Frembed résolu depuis une config distante (backup préféré, main sinon).
  * La config est éditable sans redéploiement ; en cas d'échec réseau on retombe
- * sur FALLBACK (backup préféré aussi). getFrembedBase() est synchrone et renvoie
- * toujours un domaine fonctionnel — le fetch met à jour la base en arrière-plan.
+ * sur FALLBACK (backup préféré aussi). getFrembedBase() est synchrone ; attendre
+ * initFrembedBase() avant une requête API pour éviter une ancienne redirection CORS.
  */
 
 const CONFIG_URL =
   'https://raw.githubusercontent.com/kingofthrone73-dotcom/frembed-config/main/config.json';
 
 // Fallback hardcodé si le fetch échoue.
-const FALLBACK = { main: 'https://frembed.hair', backup: 'https://frembed.asia' };
+const FALLBACK = { main: 'https://frembed.surf', backup: 'https://frembed.surf' };
 
 const pickBase = (cfg: { main?: string; backup?: string }): string =>
   String(cfg.backup || cfg.main || FALLBACK.backup).replace(/\/+$/, '');
@@ -19,7 +19,7 @@ const pickBase = (cfg: { main?: string; backup?: string }): string =>
 let frembedBase = pickBase(FALLBACK);
 let initPromise: Promise<string> | null = null;
 
-/** Base URL courante du domaine Frembed. Synchrone, toujours utilisable. */
+/** Base URL courante du domaine Frembed, ou domaine de secours avant résolution. */
 export function getFrembedBase(): string {
   return frembedBase;
 }

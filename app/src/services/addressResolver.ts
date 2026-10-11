@@ -1,4 +1,6 @@
-import { UPDATE_CHECK, FALLBACK_CONFIG, DEV_SITE_URL } from '../config';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { UPDATE_CHECK, FALLBACK_CONFIG } from '../config';
+import { DEV_SITE_URL } from '../config';
 
 export type AddressConfig = {
   primaryUrl: string;
@@ -103,39 +105,31 @@ function normalizeAddressJson(raw: RawAddressJson): AddressConfig | null {
 
 const HARDCODED_FALLBACK: AddressConfig = {
   primaryUrl: FALLBACK_CONFIG.PRIMARY_URL,
-  mirrors: [],
+  mirrors: FALLBACK_CONFIG.MIRRORS,
   githubUrl: FALLBACK_CONFIG.GITHUB_URL,
   telegramUrl: FALLBACK_CONFIG.TELEGRAM_URL,
 };
 
-export async function resolveAddressConfig(): Promise<AddressConfig> {
-  // Court-circuit de dev : voir DEV_SITE_URL. Le garde `__DEV__` est ce qui
-  // garantit qu'un build release ne peut pas partir sur un localhost.
-  if (__DEV__ && DEV_SITE_URL) {
-    return { ...HARDCODED_FALLBACK, primaryUrl: DEV_SITE_URL, mirrors: [] };
-  }
-
-  // Step 1: discover the resolver host via rentry.
-  let resolverHost: string;
+async function fetchRentryHost(): Promise<string | null> {
   try {
     const res = await fetchWithTimeout(
       `${UPDATE_CHECK.RENTRY_URL}?_=${Date.now()}`,
       UPDATE_CHECK.TIMEOUT_MS,
     );
     if (!res.ok) throw new Error(`rentry status ${res.status}`);
-    const text = await res.text();
-    const host = parseRentry(text);
+    const host = parseRentry(await res.text());
     if (!host) throw new Error('rentry: no valid hostname');
-    resolverHost = host;
+    return host;
   } catch (err) {
     console.warn('[addressResolver] rentry fetch failed', err);
-    return HARDCODED_FALLBACK;
+    return null;
   }
+}
 
-  // Step 2: fetch /address.json on the discovered host.
+async function fetchAddressJson(host: string): Promise<AddressConfig | null> {
   try {
     const res = await fetchWithTimeout(
-      `https://${resolverHost}/address.json?_=${Date.now()}`,
+      `https://${host}/address.json?_=${Date.now()}`,
       UPDATE_CHECK.TIMEOUT_MS,
     );
     if (!res.ok) throw new Error(`address.json status ${res.status}`);
@@ -144,7 +138,64 @@ export async function resolveAddressConfig(): Promise<AddressConfig> {
     if (!normalized) throw new Error('address.json: invalid shape');
     return normalized;
   } catch (err) {
-    console.warn('[addressResolver] address.json fetch failed', err);
-    return HARDCODED_FALLBACK;
+    console.warn('[addressResolver] address.json fetch failed on', host, err);
+    return null;
   }
+}
+
+async function readCachedConfig(): Promise<AddressConfig | null> {
+  try {
+    const raw = await AsyncStorage.getItem(FALLBACK_CONFIG.CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<AddressConfig>;
+    if (!isString(parsed.primaryUrl) || !Array.isArray(parsed.mirrors)) return null;
+    if (!isString(parsed.githubUrl) || !isString(parsed.telegramUrl)) return null;
+    return {
+      primaryUrl: parsed.primaryUrl,
+      mirrors: parsed.mirrors.filter(isString),
+      githubUrl: parsed.githubUrl,
+      telegramUrl: parsed.telegramUrl,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// Ajoute à la fin de la chaîne les miroirs connus absents de la config, pour
+// qu'une config en cache périmée garde toujours des domaines de secours.
+function withKnownMirrors(config: AddressConfig): AddressConfig {
+  const seen = new Set([config.primaryUrl, ...config.mirrors]);
+  const extra = [FALLBACK_CONFIG.PRIMARY_URL, ...FALLBACK_CONFIG.MIRRORS].filter(
+    url => !seen.has(url),
+  );
+  return { ...config, mirrors: [...config.mirrors, ...extra] };
+}
+
+export async function resolveAddressConfig(): Promise<AddressConfig> {
+  // Court-circuit de dev : voir DEV_SITE_URL. Le garde `__DEV__` est ce qui
+  // garantit qu'un build release ne peut pas partir sur un localhost.
+  if (__DEV__ && DEV_SITE_URL) {
+    return { ...HARDCODED_FALLBACK, primaryUrl: DEV_SITE_URL, mirrors: [] };
+  }
+
+  // Derrière un VPN, rentry ou le résolveur peuvent renvoyer un défi
+  // Cloudflare : on essaie alors les résolveurs connus, puis la dernière
+  // config valide, puis la liste codée en dur.
+  const rentryHost = await fetchRentryHost();
+  const hosts = [rentryHost, ...FALLBACK_CONFIG.RESOLVER_HOSTS].filter(
+    (host, i, all): host is string => !!host && all.indexOf(host) === i,
+  );
+
+  for (const host of hosts) {
+    const config = await fetchAddressJson(host);
+    if (config) {
+      AsyncStorage.setItem(FALLBACK_CONFIG.CACHE_KEY, JSON.stringify(config)).catch(
+        () => {},
+      );
+      return config;
+    }
+  }
+
+  const cached = await readCachedConfig();
+  return withKnownMirrors(cached ?? HARDCODED_FALLBACK);
 }

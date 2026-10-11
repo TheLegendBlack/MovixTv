@@ -105,3 +105,4 @@ release-signing.properties
 
 # Sauvegardes locales (669 Mo, APK inclus) : restent sur le disque, hors git
 .tv-backup/
+

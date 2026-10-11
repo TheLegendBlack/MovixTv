@@ -58,25 +58,35 @@ export function useWrappedTracker(options: UseWrappedTrackerOptions) {
 
     // Check if data collection is enabled
     const isDataCollectionEnabled = useCallback(() => {
-        const setting = localStorage.getItem('privacy_data_collection');
-        // Default to true, disable only if explicitly set to 'false'
-        return setting !== 'false';
+        try {
+            const setting = localStorage.getItem('privacy_data_collection');
+            // Default to true, disable only if explicitly set to 'false'
+            return setting !== 'false';
+        } catch {
+            // Pas de collecte si la préférence de confidentialité est illisible.
+            return false;
+        }
     }, []);
 
     // Get user and profile IDs
     // IMPORTANT: Priority must match the JWT token generation order in the server
     // The JWT 'sub' claim is set from OAuth provider IDs (Google/Discord), so we must prioritize those
     const getUserInfo = useCallback(() => {
-        const authToken = localStorage.getItem('auth_token');
-        const profileId = localStorage.getItem('selected_profile_id');
-        let userId: string | null = getResolvedUserId();
+        try {
+            const authToken = localStorage.getItem('auth_token');
+            const profileId = localStorage.getItem('selected_profile_id');
+            let userId: string | null = getResolvedUserId();
 
-        // Priority 5 (last resort): VIP Guest UUID
-        if (!userId) {
-            userId = localStorage.getItem('guest_uuid');
+            // Priority 5 (last resort): VIP Guest UUID
+            if (!userId) {
+                userId = localStorage.getItem('guest_uuid');
+            }
+
+            return { authToken, profileId, userId };
+        } catch {
+            // Firefox peut fermer le stockage avant le dernier tick (NS_ERROR_ABORT).
+            return { authToken: null, profileId: null, userId: null };
         }
-
-        return { authToken, profileId, userId };
     }, []);
 
     /**

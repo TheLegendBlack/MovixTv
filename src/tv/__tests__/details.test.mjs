@@ -354,7 +354,7 @@ test('le bandeau de prévisualisation se déduit du focus, sans câblage', async
   // Opaque et au-dessus : les rangées du dessus glissent dessous. Le bandeau
   // est partagé avec les pages de collection depuis le 15/09/2026.
   const banner = await read('src/tv/components/TvPreviewBanner.tsx');
-  assert.match(banner, /z-10 flex items-start gap-6 bg-\[#0a0a0a\]/);
+  assert.match(banner, /z-10 flex items-start gap-6 bg-movix-ink/);
   assert.match(search, /<TvPreviewBanner/);
 
   // La géométrie se dérive : le décalage de grille ne peut pas diverger de la
@@ -413,12 +413,17 @@ test('la transformation est une sortie puis une entrée, jamais un fondu croisé
 });
 
 test('chaque page nomme des rangées qui existent vraiment', async () => {
-  const [tmdb, browse, home, movies] = await Promise.all([
+  const [tmdb, browse, pageRows] = await Promise.all([
     read('src/tv/data/tmdb.ts'),
     read('src/tv/TvBrowse.tsx'),
-    read('src/tv/TvHome.tsx'),
-    read('src/tv/TvMovies.tsx'),
+    read('src/tv/data/pages.ts'),
   ]);
+  // Depuis la personnalisation (10/2026), la rangée de bannière de chaque page
+  // est déclarée avec sa liste par défaut dans `TV_PAGES`.
+  const heroOf = name => {
+    const entry = pageRows.match(new RegExp(`defaults: ${name}, hero: '([^']+)'`));
+    return entry ? `heroRowId="${entry[1]}"` : '';
+  };
 
   // `ROWS` est un registre, les listes de page sont l'ordre d'affichage. Une
   // faute de frappe dans une liste ne casse rien : la rangée disparaît, en
@@ -437,8 +442,10 @@ test('chaque page nomme des rangées qui existent vraiment', async () => {
   };
 
   const pages = {
-    TV_HOME_ROWS: { ids: listOf('TV_HOME_ROWS'), hero: home },
-    TV_MOVIE_ROWS: { ids: listOf('TV_MOVIE_ROWS'), hero: movies },
+    TV_HOME_ROWS: { ids: listOf('TV_HOME_ROWS'), hero: heroOf('TV_HOME_ROWS') },
+    TV_MOVIE_ROWS: { ids: listOf('TV_MOVIE_ROWS'), hero: heroOf('TV_MOVIE_ROWS') },
+    TV_SERIES_ROWS: { ids: listOf('TV_SERIES_ROWS'), hero: heroOf('TV_SERIES_ROWS') },
+    TV_ANIME_ROWS: { ids: listOf('TV_ANIME_ROWS'), hero: heroOf('TV_ANIME_ROWS') },
   };
 
   for (const [name, page] of Object.entries(pages)) {
@@ -474,7 +481,9 @@ test('la clé VIP amorce aussi l\'habilitation, pas seulement le code', async ()
   // ne rafraîchit en arrière-plan que si la valeur est DÉJÀ vraie.
   const reader = vip.match(/export function isUserVip\(\)[\s\S]*?\n\}/);
   assert.ok(reader, 'isUserVip introuvable');
-  assert.match(reader[0], /localStorage\.getItem\('is_vip'\) === 'true'/);
+  // Depuis la reprise amont du 11/10/2026, la lecture passe par
+  // `readLocalStorage` (stockage protégé, `utils/browserStorage.ts`).
+  assert.match(reader[0], /(?:readLocalStorage\(|localStorage\.getItem\()'is_vip'\) === 'true'/);
 
   // L'amont a déplacé l'extraction côté serveur : les gardes `if (!isVip)` de
   // `extractM3u8.ts` ont disparu au profit de `serverResolveRequest.ts`, qui

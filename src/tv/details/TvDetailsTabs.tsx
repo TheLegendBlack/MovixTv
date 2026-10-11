@@ -85,7 +85,7 @@ const TvTabButton: React.FC<{
       {active && (
         // Débordant de 8 px pour venir se poser sur la ligne du conteneur, que
         // le trait doit recouvrir et non doubler.
-        <span className="absolute inset-x-[10px] -bottom-[1px] h-[2px] rounded-full bg-white" />
+        <span className="absolute inset-x-[10px] -bottom-[1px] h-[2px] rounded-full bg-tv-focus" />
       )}
     </button>
   );

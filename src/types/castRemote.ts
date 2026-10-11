@@ -17,6 +17,7 @@ export interface CastRemoteStatus {
   canSeek: boolean;
   idleReason?: string;
   errorCode?: string;
+  nativeErrorCode?: string;
 }
 
 export interface CastTextTrack {
@@ -49,6 +50,7 @@ export interface CastRemoteController {
 }
 
 export interface MovixAndroidCastBridge {
+  copyDiagnostics?(): Promise<void>;
   isSupported(): Promise<boolean>;
   getStatus(): Promise<CastRemoteStatus>;
   play(): Promise<void>;

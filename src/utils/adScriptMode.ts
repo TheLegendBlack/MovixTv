@@ -14,7 +14,7 @@
 // This is a build-time switch (code constant), not a user setting. Flip
 // SCRIPT_AD_MODE_WANTED to false to revert the button to direct-link behaviour.
 
-const SCRIPT_AD_MODE_WANTED = true;
+const SCRIPT_AD_MODE_WANTED = false;
 
 // Ad-network script src, protocol-relative as delivered by the network. Lu
 // depuis le .env (VITE_AD_SCRIPT_SRC) : le dépôt est synchronisé vers le

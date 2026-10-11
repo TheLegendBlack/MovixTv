@@ -23,6 +23,23 @@ import org.chromium.net.ExperimentalUrlRequest
 import org.chromium.net.UrlRequest
 import org.chromium.net.UrlResponseInfo
 
+internal fun decodedCronetResponseHeaders(headers: Map<String, String>): Map<String, String> {
+    val encodings = headers.entries
+        .filter { it.key.equals("Content-Encoding", ignoreCase = true) }
+        .flatMap { it.value.split(',') }
+        .map { it.trim().lowercase() }
+    val decodedEncodings = setOf("br", "gzip", "x-gzip", "deflate")
+    if (encodings.isEmpty() || encodings.any { it !in decodedEncodings }) return headers
+
+    // Cronet livre les octets décompressés mais conserve les en-têtes du corps
+    // compressé. Annoncer cette longueur tronque les segments côté lecteur.
+    // Sans longueur connue, le relais transmet le flux jusqu'à Connection: close.
+    return headers.filterKeys {
+        !it.equals("Content-Encoding", ignoreCase = true) &&
+            !it.equals("Content-Length", ignoreCase = true)
+    }
+}
+
 /**
  * Upstream du proxy media qui fetch via **Cronet** (le moteur reseau de
  * Chromium, charge depuis Google Play Services).
@@ -210,7 +227,7 @@ internal class CronetMediaProxyUpstream(
         return MediaProxyUpstreamResponse(
             statusCode = info.httpStatusCode,
             statusMessage = info.httpStatusText ?: "",
-            headers = responseHeaders,
+            headers = decodedCronetResponseHeaders(responseHeaders),
             body = callback.body,
             finalUrl = info.url ?: target.upstreamUrl,
             onClose = {

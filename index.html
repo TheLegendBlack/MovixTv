@@ -50,46 +50,142 @@
             Movix — Films et séries en streaming gratuit | VF, VOSTFR, HD
         </title>
 
-        <!-- JSON-LD -->
+        <!-- JSON-LD. Un seul objet avec @graph, pas un tableau : Safari 18+
+             injecte dans chaque page un lecteur de données structurées qui
+             suppose un objet et plante sur un tableau
+             (`r["@context"].toLowerCase`), une erreur dans la console de
+             chaque visiteur Safari. @graph est la forme recommandée par
+             schema.org et comprise par Google. -->
         <script type="application/ld+json" data-rh="true">
-            [
-                {
-                    "@context": "https://schema.org",
-                    "@type": "Organization",
-                    "name": "Movix",
-                    "alternateName": "Movix Streaming",
-                    "url": "__MOVIX_SITE_URL__",
-                    "description": "Movix est une plateforme française open-source (CC BY-NC 4.0) de streaming multimédia : films, séries, anime, TV en direct et Watch Parties synchronisées.",
-                    "logo": {
-                        "@type": "ImageObject",
-                        "url": "__MOVIX_SITE_URL__/movix.png",
-                        "width": 512,
-                        "height": 512
-                    },
-                    "sameAs": ["https://t.me/movix_site"],
-                    "contactPoint": {
-                        "@type": "ContactPoint",
-                        "contactType": "customer support",
-                        "email": "movixstreaming@gmail.com",
-                        "availableLanguage": ["French", "English"]
-                    }
-                },
-                {
-                    "@context": "https://schema.org",
-                    "@type": "WebSite",
-                    "name": "Movix",
-                    "url": "__MOVIX_SITE_URL__",
-                    "inLanguage": "fr",
-                    "potentialAction": {
-                        "@type": "SearchAction",
-                        "target": {
-                            "@type": "EntryPoint",
-                            "urlTemplate": "__MOVIX_SITE_URL__/search?q={search_term_string}"
+            {
+                "@context": "https://schema.org",
+                "@graph": [
+                    {
+                        "@type": "Organization",
+                        "name": "Movix",
+                        "alternateName": "Movix Streaming",
+                        "url": "__MOVIX_SITE_URL__",
+                        "description": "Movix est une plateforme française open-source (CC BY-NC 4.0) de streaming multimédia : films, séries, anime, TV en direct et Watch Parties synchronisées.",
+                        "logo": {
+                            "@type": "ImageObject",
+                            "url": "__MOVIX_SITE_URL__/movix.png",
+                            "width": 512,
+                            "height": 512
                         },
-                        "query-input": "required name=search_term_string"
+                        "sameAs": ["https://t.me/ix_annonces"],
+                        "contactPoint": {
+                            "@type": "ContactPoint",
+                            "contactType": "customer support",
+                            "email": "movixstreaming@gmail.com",
+                            "availableLanguage": ["French", "English"]
+                        }
+                    },
+                    {
+                        "@type": "WebSite",
+                        "name": "Movix",
+                        "url": "__MOVIX_SITE_URL__",
+                        "inLanguage": "fr",
+                        "potentialAction": {
+                            "@type": "SearchAction",
+                            "target": {
+                                "@type": "EntryPoint",
+                                "urlTemplate": "__MOVIX_SITE_URL__/search?q={search_term_string}"
+                            },
+                            "query-input": "required name=search_term_string"
+                        }
+                    }
+                ]
+            }
+        </script>
+        <script>
+            // Stockage de secours, avant tout autre script. Quand le navigateur
+            // refuse le stockage (cookies bloqués, iframe sandboxée, WebView sans
+            // DOM storage, base Firefox corrompue), le simple accès à
+            // `localStorage` jette (SecurityError « Access is denied » ou « The
+            // operation is insecure », NS_ERROR_FAILURE), vaut null ou n'existe
+            // pas. Plus de 700 accès directs du code supposent un stockage
+            // utilisable : chacun devenait un écran de crash (GlitchTip B2, ED,
+            // E6, DN, CB…). Ici, un stockage en mémoire prend la place de la
+            // propriété : le site reste utilisable pendant la visite, rien n'est
+            // conservé après. La sonde ne fait que lire : un stockage simplement
+            // plein reste le vrai, pour ne pas masquer les données existantes.
+            // ES5 uniquement : ce bloc n'est pas transpilé.
+            (function () {
+                var reserved = { getItem: 1, setItem: 1, removeItem: 1, clear: 1, key: 1, length: 1 };
+
+                function createMemoryStorage() {
+                    var data = Object.create(null);
+                    var storage = Object.create({
+                        getItem: function (key) {
+                            key = String(key);
+                            return key in data ? data[key] : null;
+                        },
+                        setItem: function (key, value) {
+                            key = String(key);
+                            data[key] = String(value);
+                            // Object.keys(localStorage) doit lister les clés,
+                            // comme pour un vrai Storage.
+                            if (!reserved[key]) {
+                                Object.defineProperty(storage, key, {
+                                    value: data[key],
+                                    configurable: true,
+                                    enumerable: true,
+                                    writable: true,
+                                });
+                            }
+                        },
+                        removeItem: function (key) {
+                            key = String(key);
+                            delete data[key];
+                            if (!reserved[key]) delete storage[key];
+                        },
+                        clear: function () {
+                            var keys = Object.keys(data);
+                            for (var i = 0; i < keys.length; i++) storage.removeItem(keys[i]);
+                        },
+                        key: function (index) {
+                            var keys = Object.keys(data);
+                            return index >= 0 && index < keys.length ? keys[index] : null;
+                        },
+                    });
+                    Object.defineProperty(storage, "length", {
+                        get: function () {
+                            return Object.keys(data).length;
+                        },
+                    });
+                    return storage;
+                }
+
+                function isUsable(name) {
+                    try {
+                        var storage = window[name];
+                        if (!storage) return false;
+                        storage.getItem("__movix_storage_probe__");
+                        return true;
+                    } catch (error) {
+                        return false;
                     }
                 }
-            ]
+
+                var names = ["localStorage", "sessionStorage"];
+                for (var i = 0; i < names.length; i++) {
+                    if (isUsable(names[i])) continue;
+                    try {
+                        Object.defineProperty(window, names[i], {
+                            value: createMemoryStorage(),
+                            configurable: true,
+                            enumerable: true,
+                            writable: false,
+                        });
+                        // Lu par la synchronisation de profil (App.tsx) : un
+                        // stockage éphémère ne doit jamais servir de base de sync.
+                        window.__MOVIX_MEMORY_STORAGE__ = window.__MOVIX_MEMORY_STORAGE__ || {};
+                        window.__MOVIX_MEMORY_STORAGE__[names[i]] = true;
+                    } catch (error) {
+                        // Propriété non remplaçable : comportement d'origine.
+                    }
+                }
+            })();
         </script>
         <script>
             // Object.hasOwn is ES2022 (Chrome 93+, Safari 15.4+, Firefox 92+). react-markdown
@@ -99,106 +195,141 @@
                     value: function (obj, prop) {
                         if (obj === null || obj === undefined) {
                             throw new TypeError(
-                                "Cannot convert undefined or null to object",
+                                "Cannot convert undefined or null to object"
                             );
                         }
                         return Object.prototype.hasOwnProperty.call(
                             Object(obj),
-                            prop,
+                            prop
                         );
                     },
                     configurable: true,
                     writable: true,
                 });
             }
+            // globalThis is Chrome 71+ and LG webOS 5 TVs run Chrome 68. gtag.js reads it,
+            // and as an async classic script it can run before the core-js polyfill chunk
+            // injected by @vitejs/plugin-legacy (a module script). ES5 only here, this block
+            // is not transpiled.
+            if (typeof globalThis === "undefined") {
+                Object.defineProperty(window, "globalThis", {
+                    value: window,
+                    configurable: true,
+                    writable: true,
+                });
+            }
         </script>
         <script>
-            (() => {
-                const buildId = "%VITE_APP_BUILD_ID%";
-                const buildStorageKey = "movix_build_id";
-                const recoveryStorageKey = `movix_build_recovery_${buildId}`;
-                const refreshSearchParam = "movix_build_refresh";
+            // Rechargement de secours quand le bundle d'entrée ne charge pas :
+            // un vieux index.html (cache HTTP, edge) pointe vers un chunk hashé
+            // qui n'existe plus → 404 → page blanche, main.tsx ne démarre
+            // jamais, donc lazyWithRetry ne peut rien faire. Ce chemin ne
+            // s'exécute que quand le site est déjà cassé : on repart de zéro
+            // (SW désinscrit, caches vidés) et on recharge avec un paramètre
+            // qui contourne le cache du document. Une seule fois par session
+            // et par build, pour ne pas boucler si le HTML servi reste périmé.
+            // Ce script classique n'est pas transpilé par Vite : rester en ES5
+            // pour que la récupération fonctionne aussi avant le bundle legacy.
+            (function () {
+                var buildId = "%VITE_APP_BUILD_ID%";
+                var recoveryStorageKey = "movix_build_recovery_" + buildId;
+                var refreshSearchParam = "movix_build_refresh";
+                var recoveryStarted = false;
+                var recoveredFromUrl = false;
 
-                const buildRecoveryUrl = () => {
-                    const url = new URL(window.location.href);
+                function buildRecoveryUrl() {
+                    var url = new URL(window.location.href);
                     url.searchParams.set(
                         refreshSearchParam,
-                        `${buildId}-${Date.now()}`,
+                        buildId + "-" + Date.now()
                     );
                     return url.toString();
-                };
+                }
 
-                const recoverClientCache = async () => {
-                    try {
+                function recoverClientCache() {
+                    return Promise.resolve().then(function () {
                         if ("serviceWorker" in navigator) {
-                            const registrations =
-                                await navigator.serviceWorker.getRegistrations();
-                            await Promise.all(
-                                registrations.map((registration) =>
-                                    registration.unregister(),
-                                ),
-                            );
+                            return navigator.serviceWorker.getRegistrations()
+                                .then(function (registrations) {
+                                    return Promise.all(registrations.map(function (registration) {
+                                        return registration.unregister();
+                                    }));
+                                });
                         }
-
+                    }).then(function () {
                         if ("caches" in window) {
-                            const cacheKeys = await caches.keys();
-                            await Promise.all(
-                                cacheKeys.map((cacheKey) =>
-                                    caches.delete(cacheKey),
-                                ),
-                            );
+                            return caches.keys().then(function (cacheKeys) {
+                                return Promise.all(cacheKeys.map(function (cacheKey) {
+                                    return caches.delete(cacheKey);
+                                }));
+                            });
                         }
-                    } catch {
+                    }).catch(function () {
                         // Ignore cleanup errors and continue with reload.
-                    }
-
-                    try {
-                        localStorage.setItem(buildStorageKey, buildId);
-                        sessionStorage.setItem(recoveryStorageKey, "done");
-                    } catch {
-                        // Ignore storage errors.
-                    }
-
-                    window.location.replace(buildRecoveryUrl());
-                };
+                    }).then(function () {
+                        try {
+                            sessionStorage.setItem(recoveryStorageKey, "done");
+                        } catch (error) {
+                            // Le paramètre d'URL empêche aussi une boucle sans stockage.
+                        }
+                        window.location.replace(buildRecoveryUrl());
+                    });
+                }
 
                 try {
-                    const currentUrl = new URL(window.location.href);
-                    const previousBuildId =
-                        localStorage.getItem(buildStorageKey);
-                    const alreadyRecovered =
-                        sessionStorage.getItem(recoveryStorageKey) === "done";
-
-                    if (
-                        previousBuildId &&
-                        previousBuildId !== buildId &&
-                        !alreadyRecovered
-                    ) {
-                        window.__MOVIX_CACHE_RECOVERY__ = recoverClientCache();
-                        return;
-                    }
-
-                    localStorage.setItem(buildStorageKey, buildId);
-
+                    // Nettoie le paramètre laissé par un rechargement de secours.
+                    var currentUrl = new URL(window.location.href);
                     if (currentUrl.searchParams.has(refreshSearchParam)) {
+                        recoveredFromUrl = currentUrl.searchParams.get(refreshSearchParam)
+                            .indexOf(buildId + "-") === 0;
                         currentUrl.searchParams.delete(refreshSearchParam);
                         window.history.replaceState(
                             {},
                             document.title,
-                            currentUrl.toString(),
+                            currentUrl.toString()
                         );
                     }
-                } catch {
+
+                    // Clé de l'ancienne comparaison de build en localStorage.
+                    // Supprimée : le SW ne met plus le HTML en cache, donc un
+                    // nouveau build ne peut rien servir de périmé, et cette
+                    // comparaison ne faisait que recharger deux fois et vider
+                    // tous les caches à chaque déploiement. Plus lue nulle part.
+                    localStorage.removeItem("movix_build_id");
+                } catch (error) {
                     // Ignore storage errors.
                 }
 
                 window.addEventListener(
                     "error",
-                    (event) => {
-                        const target = event.target;
+                    function (event) {
+                        var target = event.target;
                         if (!(target instanceof HTMLScriptElement)) return;
-                        if (target.type !== "module") return;
-                        if (!target.src.includes("/assets/")) return;
+                        if (target.type !== "module" && target.src.indexOf("-legacy") === -1) return;
+                        if (target.src.indexOf("/assets/") === -1) return;
+                        if (recoveryStarted || recoveredFromUrl) return;
+
+                        // Le bundle legacy installe une vraie seconde tentative
+                        // au niveau SystemJS. Laisser passer le premier `error`
+                        // de sa balise dynamique ; si ce retry échoue aussi, le
+                        // prochain événement reprend la purge/recharge ci-dessous.
+                        // Les erreurs survenant avant l'installation du hook,
+                        // notamment dans les polyfills, gardent la récupération
+                        // directe.
+                        try {
+                            if (
+                                typeof window.__MOVIX_DEFER_LEGACY_SCRIPT_RECOVERY__ ===
+                                    "function" &&
+                                window.__MOVIX_DEFER_LEGACY_SCRIPT_RECOVERY__(
+                                    target.src
+                                )
+                            ) {
+                                return;
+                            }
+                        } catch (error) {
+                            // Une coordination défaillante ne doit pas désactiver
+                            // la récupération historique du bootstrap.
+                        }
 
                         try {
                             if (
@@ -207,13 +338,14 @@
                             ) {
                                 return;
                             }
-                        } catch {
+                        } catch (error) {
                             // Ignore storage errors.
                         }
 
+                        recoveryStarted = true;
                         window.__MOVIX_CACHE_RECOVERY__ = recoverClientCache();
                     },
-                    true,
+                    true
                 );
             })();
         </script>

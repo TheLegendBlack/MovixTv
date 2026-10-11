@@ -8,13 +8,23 @@ export default {
         // style des lecteurs (`#e50914`). Sur l'interface TV il ne sert plus de
         // marqueur de focus — le blanc s'en charge partout — mais uniquement à
         // porter de l'information : les barres de progression de lecture.
+        //
+        // Depuis 10/2026, ces couleurs sont des variables CSS : un thème n'est
+        // qu'un jeu de triplets RVB posé sur <html>. Les valeurs par défaut,
+        // dans `src/index.css`, sont exactement les anciennes valeurs en dur.
         movix: {
-          red: '#e50914',
-          'red-bright': '#ff3b47',
-          // Fond de l'interface TV. Repris en dur dans les dégradés de la
-          // bannière, où la valeur doit correspondre exactement sous peine de
-          // laisser une couture visible entre l'image et la page.
-          ink: '#0a0a0a',
+          red: 'rgb(var(--tv-accent) / <alpha-value>)',
+          'red-bright': 'rgb(var(--tv-accent-bright) / <alpha-value>)',
+          // Fond de l'interface TV. Repris dans les dégradés de la bannière, où
+          // la valeur doit correspondre exactement sous peine de laisser une
+          // couture visible entre l'image et la page : ceux-ci lisent la même
+          // variable.
+          ink: 'rgb(var(--tv-ink) / <alpha-value>)',
+        },
+        // Marqueur de focus (pastille pleine) et texte posé dessus.
+        tv: {
+          focus: 'rgb(var(--tv-focus) / <alpha-value>)',
+          'on-focus': 'rgb(var(--tv-on-focus) / <alpha-value>)',
         },
       },
       // Échelle calée sur le viewport CSS 960×540 de la WebView, pas sur
@@ -41,8 +51,24 @@ export default {
         "skeleton-fade": "skeletonFade 0.3s ease-out",
         "card-enter": "cardEnter 0.3s ease-out both",
         heroFade: "heroFade 420ms ease-out both",
+        "ad-content-enter": "adContentEnter 250ms cubic-bezier(0.23, 1, 0.32, 1) both",
+        "ad-easter-egg-enter": "adEasterEggEnter 250ms cubic-bezier(0.23, 1, 0.32, 1) both",
+        "ad-unlocked-glow": "adUnlockedGlow 650ms cubic-bezier(0.23, 1, 0.32, 1) both",
       },
       keyframes: {
+        adContentEnter: {
+          from: { opacity: "0", transform: "translateY(3px)" },
+          to: { opacity: "1", transform: "translateY(0)" },
+        },
+        adEasterEggEnter: {
+          from: { opacity: "0", transform: "scale(0.96)" },
+          to: { opacity: "1", transform: "scale(1)" },
+        },
+        adUnlockedGlow: {
+          "0%": { opacity: "0" },
+          "20%": { opacity: "1" },
+          "100%": { opacity: "0" },
+        },
         fadeIn: {
           "0%": { opacity: "0", transform: "translateY(-20px)" },
           "100%": { opacity: "1", transform: "translateY(0)" },

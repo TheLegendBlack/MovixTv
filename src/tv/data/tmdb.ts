@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { getTmdbLanguage } from '@/i18n';
+import { getTmdbApiKey } from '@/config/tmdbKey';
 
 /**
  * Accès TMDB pour l'interface téléviseur.
@@ -24,7 +25,7 @@ import { getTmdbLanguage } from '@/i18n';
  */
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
-const TMDB_API_KEY = import.meta.env.VITE_TMDB_API_KEY || '';
+const TMDB_API_KEY = getTmdbApiKey();
 
 /**
  * Tailles d'image, calées sur le viewport CSS 960 à densité 2.
@@ -1080,6 +1081,26 @@ async function fetchRow(spec: RowSpec, signal?: AbortSignal): Promise<TvRowData>
     layout: spec.layout,
     collection: spec.collection,
   };
+}
+
+/**
+ * Registre complet, pour l'éditeur de rangées de la personnalisation.
+ *
+ * `kind` sert à distinguer à l'écran deux rangées de même titre — « Comédies »
+ * existe pour les films, les séries et les animés.
+ */
+export function listRowSpecs(): { id: string; title: string; kind: string }[] {
+  return ROWS.map(row => {
+    const genres = String(row.params?.with_genres ?? '');
+    const kind = /(^|[,|])16([,|]|$)/.test(genres) && row.params?.with_original_language === 'ja'
+      ? 'Animés'
+      : row.path.includes('/movie')
+        ? 'Films'
+        : row.path.includes('/tv')
+          ? 'Séries'
+          : 'Films et séries';
+    return { id: row.id, title: row.title, kind };
+  });
 }
 
 /** Métadonnées d'une rangée, pour la page de collection. */

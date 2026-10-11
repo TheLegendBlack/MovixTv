@@ -1,10 +1,16 @@
+import { useLightMode } from '@/context/LightModeContext';
+import { LightweightLoading } from '@/components/LightweightLoading';
+
 /**
  * Top-of-page progress bar shown while a route chunk is loading.
  *
  * Used as the Suspense fallback for routes that don't have a matching
  * skeleton (auth, settings, help, etc.). CSS-only animation, no JS state.
  */
-export const RouteProgressBar = () => (
+export const RouteProgressBar = () => {
+  const { effectivePrefs } = useLightMode();
+  if (!effectivePrefs.loadingAnimations || !effectivePrefs.transitions) return <LightweightLoading />;
+  return (
   <div
     aria-hidden
     style={{
@@ -35,4 +41,5 @@ export const RouteProgressBar = () => (
       }
     `}</style>
   </div>
-);
+  );
+};

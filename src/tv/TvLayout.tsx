@@ -66,7 +66,7 @@ export const TvLayout: React.FC<{ children: React.ReactNode }> = ({ children }) 
   return (
     <TvFocusProvider>
       <div
-        className={isTvScaled() ? 'bg-[#0a0a0a] text-white' : 'min-h-screen bg-[#0a0a0a] text-white'}
+        className={isTvScaled() ? 'bg-movix-ink text-white' : 'min-h-screen bg-movix-ink text-white'}
         style={isTvScaled() ? SCALED_ROOT_STYLE : undefined}>
         {children}
       </div>

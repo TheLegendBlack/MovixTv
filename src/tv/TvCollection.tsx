@@ -214,9 +214,9 @@ const TvBackButton: React.FC<{ onSelect: () => void }> = ({ onSelect }) => {
         }}
         className={
           'flex h-9 w-9 shrink-0 items-center justify-center rounded-full outline-none transition-transform duration-150 ' +
-          (focused ? 'scale-105 bg-white text-black' : 'bg-white/15 text-white')
+          (focused ? 'scale-105 bg-tv-focus text-tv-on-focus' : 'bg-white/15 text-white')
         }
-        style={{ boxShadow: focused ? '0 0 0 3px rgba(255,255,255,0.3)' : 'none' }}>
+        style={{ boxShadow: focused ? '0 0 0 3px rgb(var(--tv-focus) / 0.3)' : 'none' }}>
         <svg
           viewBox="0 0 24 24"
           width={22}

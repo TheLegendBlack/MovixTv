@@ -89,13 +89,13 @@ const TvSeasonItem: React.FC<{
       }}
       className={
         'mb-[4px] block w-full rounded-lg px-[10px] py-[7px] text-left outline-none transition-colors duration-150 ' +
-        (focused ? 'bg-white text-[#0a0a0a] ' : active ? 'text-white ' : 'text-white/50 ')
+        (focused ? 'bg-tv-focus text-tv-on-focus ' : active ? 'text-white ' : 'text-white/50 ')
       }>
       <span className="block text-[14px] font-semibold leading-tight">{season.name}</span>
       {active && (
         <span
           className={
-            'block text-[11px] leading-tight ' + (focused ? 'text-[#0a0a0a]/60' : 'text-white/40')
+            'block text-[11px] leading-tight ' + (focused ? 'text-tv-on-focus/60' : 'text-white/40')
           }>
           {season.episodeCount} épisode{season.episodeCount > 1 ? 's' : ''}
         </span>

@@ -65,6 +65,13 @@ export interface TvKeyboardProps {
   onAppend: (character: string) => void;
   onBackspace: () => void;
   onClear: () => void;
+  /**
+   * Touches ajoutées après les chiffres, pour une saisie qui en a besoin — le
+   * tiret des clés VIP (`VIP-XXXX`). Absent de la recherche.
+   */
+  extraKeys?: readonly string[];
+  /** Masque la touche Espace : inutile pour une clé, et source d'erreurs. */
+  hideSpace?: boolean;
 }
 
 export const TvKeyboard: React.FC<TvKeyboardProps> = ({
@@ -74,11 +81,14 @@ export const TvKeyboard: React.FC<TvKeyboardProps> = ({
   onAppend,
   onBackspace,
   onClear,
+  extraKeys,
+  hideSpace = false,
 }) => {
   const scopes = tvKeyboardScopes(idPrefix);
+  const keys = extraKeys && extraKeys.length > 0 ? [...KEYS, ...extraKeys] : KEYS;
 
   const actions = [
-    { id: 'espace', label: 'Espace', grow: 3, onSelect: () => onAppend(' ') },
+    ...(hideSpace ? [] : [{ id: 'espace', label: 'Espace', grow: 3, onSelect: () => onAppend(' ') }]),
     { id: 'effacer', label: 'Effacer', grow: 2, icon: true, onSelect: onBackspace },
     { id: 'vider', label: 'Tout effacer', grow: 4, onSelect: onClear },
   ];
@@ -93,7 +103,7 @@ export const TvKeyboard: React.FC<TvKeyboardProps> = ({
   const gridRef = useFocusScope({
     id: scopes.grid,
     orientation: 'grid',
-    count: KEYS.length,
+    count: keys.length,
     columns: KEYBOARD_COLUMNS,
     neighbors: { right: rightNeighbor, down: downNeighbor },
   });
@@ -123,7 +133,7 @@ export const TvKeyboard: React.FC<TvKeyboardProps> = ({
           gap: KEY_GAP,
           marginTop: KEY_GAP,
         }}>
-        {KEYS.map((key, index) => (
+        {keys.map((key, index) => (
           <TvKey
             key={key}
             scopeId={scopes.grid}
@@ -167,7 +177,7 @@ const TvKey: React.FC<{
       className={
         'flex h-8 items-center justify-center rounded-md font-semibold outline-none transition-transform duration-100 ' +
         className +
-        (focused ? ' bg-white text-black' : ' bg-white/[0.07] text-white/75')
+        (focused ? ' bg-tv-focus text-tv-on-focus' : ' bg-white/[0.07] text-white/75')
       }
       style={{ ...style, transform: `scale(${focused ? 1 : KEY_REST_SCALE})` }}>
       {children}

@@ -25,11 +25,11 @@
 html.movix-tv [data-player-settings] button:focus,
 html.movix-tv [data-player-settings] [tabindex]:focus,
 html.movix-tv [data-player-settings] a:focus {
-  outline: 3px solid theme('colors.movix.red-bright');
+  outline: 3px solid rgb(var(--tv-accent-bright));
   outline-offset: 2px;
   border-radius: 10px;
   /* Le contour seul se perd sur une affiche claire : on ajoute un fond. */
-  background-color: rgb(255 59 71 / 0.18);
+  background-color: rgb(var(--tv-accent-bright) / 0.18);
 }
 
 /* --- 2. Lisibilité à trois mètres ---------------------------------------- */

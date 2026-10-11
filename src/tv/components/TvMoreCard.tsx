@@ -64,9 +64,9 @@ export const TvMoreCard: React.FC<TvMoreCardProps> = ({
         style={{
           width: 44,
           height: 44,
-          backgroundColor: focused ? '#ffffff' : 'transparent',
-          border: `1.5px solid ${focused ? '#ffffff' : 'rgba(255,255,255,0.3)'}`,
-          color: focused ? '#0a0a0a' : 'rgba(255,255,255,0.85)',
+          backgroundColor: focused ? 'rgb(var(--tv-focus))' : 'transparent',
+          border: `1.5px solid ${focused ? 'rgb(var(--tv-focus))' : 'rgba(255,255,255,0.3)'}`,
+          color: focused ? 'rgb(var(--tv-on-focus))' : 'rgba(255,255,255,0.85)',
         }}>
         {/* Chevron tracé à la main : la police d'icônes n'est pas chargée dans
             la WebView, et un glyphe manquant en fin de rangée est plus coûteux
@@ -104,7 +104,7 @@ export const TvMoreCard: React.FC<TvMoreCardProps> = ({
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 rounded-xl transition-opacity duration-150"
-        style={{ boxShadow: '0 0 0 3px #fff', opacity: focused ? 1 : 0 }}
+        style={{ boxShadow: '0 0 0 3px rgb(var(--tv-focus))', opacity: focused ? 1 : 0 }}
       />
     </div>
 

@@ -198,7 +198,7 @@ const TvHeroButton: React.FC<{ scopeId: string; index: number; action: HeroActio
         'flex h-[30px] items-center justify-center gap-[6px] rounded-full text-[14px] font-semibold outline-none transition-colors duration-150 ' +
         (round ? 'w-[30px] ' : 'px-[16px] ') +
         (focused
-          ? 'bg-white text-[#0a0a0a]'
+          ? 'bg-tv-focus text-tv-on-focus'
           : round
             ? 'border border-white/30 text-white/75'
             : 'bg-white/[0.14] text-white/90')

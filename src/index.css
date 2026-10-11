@@ -2,6 +2,118 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer utilities {
+  /* Les anciens WebKit ignorent `dvh`. Ces classes gardent `vh` comme valeur
+     de repli, tandis que les variantes responsive Tailwind restent libres de
+     les remplacer aux breakpoints suivants. */
+  .h-dynamic-screen {
+    height: 100vh;
+  }
+
+  .h-dynamic-40 {
+    height: 40vh;
+  }
+
+  .min-h-dynamic-40 {
+    min-height: 40vh;
+  }
+
+  .max-h-dynamic-40 {
+    max-height: 40vh;
+  }
+
+  .mb-dynamic-40 {
+    margin-bottom: 40vh;
+  }
+
+  @supports (height: 100dvh) {
+    .h-dynamic-screen {
+      height: 100dvh;
+    }
+
+    .h-dynamic-40 {
+      height: 40dvh;
+    }
+
+    .min-h-dynamic-40 {
+      min-height: 40dvh;
+    }
+
+    .max-h-dynamic-40 {
+      max-height: 40dvh;
+    }
+
+    .mb-dynamic-40 {
+      margin-bottom: 40dvh;
+    }
+  }
+
+  /* Les enfants de ces conteneurs sont positionnés en absolu. Le pseudo-
+     élément réserve donc la hauteur sur les moteurs sans `aspect-ratio`, sans
+     ajouter de hauteur aux images ou aux blocs qui restent dans le flux. */
+  .media-aspect-poster::before,
+  .media-aspect-video::before {
+    content: "";
+    display: block;
+  }
+
+  .media-aspect-poster::before {
+    padding-bottom: 150%;
+  }
+
+  .media-aspect-video::before {
+    padding-bottom: 56.25%;
+  }
+
+  @supports (aspect-ratio: 1 / 1) {
+    .media-aspect-poster {
+      aspect-ratio: 2 / 3;
+    }
+
+    .media-aspect-video {
+      aspect-ratio: 16 / 9;
+    }
+
+    .media-aspect-poster::before,
+    .media-aspect-video::before {
+      content: none;
+    }
+  }
+}
+
+/* Media colours stay on the artwork and its surfaces. Actions, ratings and
+   destructive controls retain their existing semantic colours. */
+.media-color-card,
+.media-color-card:hover {
+  background-color: rgb(var(--media-color-surface));
+  border-color: rgba(var(--media-color), 0.3);
+}
+
+.media-card-color-layers {
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+.media-color-card .media-card-color-layers {
+  opacity: 1;
+}
+
+.media-color-wash {
+  background: linear-gradient(to top, rgba(var(--media-color), 0.2), rgba(var(--media-color), 0.04) 24%, transparent 48%);
+}
+
+.media-card-color-overlay {
+  background: linear-gradient(to top, rgba(var(--media-color), 0.65) 0%, rgba(var(--media-color), 0.22) 50%, transparent 80%);
+}
+
+.media-card-muted {
+  transition: color 200ms ease;
+}
+
+.media-color-card .media-card-muted {
+  color: rgb(255 255 255 / 0.8);
+}
+
 google-cast-launcher {
   display: inline-flex !important;
   max-width: 24px;
@@ -187,6 +299,14 @@ body.embla-scrolling .embla-slide {
 
 @layer base {
   :root {
+    /* Couleurs de l'interface TV, en triplets RVB (thèmes de personnalisation).
+       Valeurs par défaut = anciennes valeurs en dur. */
+    --tv-ink: 10 10 10;
+    --tv-accent: 229 9 20;
+    --tv-accent-bright: 255 59 71;
+    --tv-focus: 255 255 255;
+    --tv-on-focus: 10 10 10;
+
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
 
@@ -1484,6 +1604,13 @@ body,
 .video-container.player-fullscreen-fill video {
   width: 100%;
   height: 100%;
+}
+
+/* :focus reste pris en charge par les anciennes WebView des téléviseurs. */
+[data-hls-player-root][data-keyboard-controls="true"] [data-player-chrome] button:focus,
+[data-hls-player-root][data-keyboard-controls="true"] button[data-player-chrome]:focus {
+  outline: 2px solid #fff;
+  outline-offset: 4px;
 }
 
 /* ═══════════════════════════════════════════════════════════════

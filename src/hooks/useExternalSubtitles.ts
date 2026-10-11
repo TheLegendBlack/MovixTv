@@ -6,8 +6,9 @@ import {
   type SubtitleQuery,
   type SubtitleTrack,
 } from '../services/subtitles/index.ts';
+import { getTmdbApiKey } from '@/config/tmdbKey';
 
-const TMDB_API_KEY = import.meta.env.VITE_TMDB_API_KEY || '';
+const TMDB_API_KEY = getTmdbApiKey();
 
 export interface UseExternalSubtitlesResult {
   tracks: SubtitleTrack[];

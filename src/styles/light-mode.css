@@ -12,17 +12,19 @@
    - screensaver kenburns
    - animations décoratives "rainbow"
    ══════════════════════════════════════════════════════════════════════════ */
-html[data-no-bg-anim] canvas {
+html[data-no-bg-anim] [data-decorative-animation] {
   display: none !important;
 }
 html[data-no-bg-anim] .snow-particle {
   display: none !important;
   animation: none !important;
 }
-html[data-no-bg-anim] .screensaver-kenburns {
+html[data-no-bg-anim] .screensaver-kenburns,
+html[data-no-bg-anim] .screensaver-mosaic-item img {
   animation: none !important;
 }
-html[data-no-bg-anim] [class*="rainbow"] {
+html[data-no-bg-anim] [class*="rainbow"],
+html[data-no-bg-anim] .animated-gradient-bg {
   animation: none !important;
 }
 /* Halo lumineux radial du SquareBackground — coûteux (RAF sur pointermove
@@ -44,28 +46,22 @@ html[data-no-loading-anim] .animate-spin,
 html[data-no-loading-anim] .animate-bounce,
 html[data-no-loading-anim] .animate-ping,
 html[data-no-loading-anim] [class*="animate-pulse"],
-html[data-no-loading-anim] [class*="animate-spin"] {
+html[data-no-loading-anim] [class*="animate-spin"],
+html[data-no-loading-anim] .react-loading-skeleton,
+html[data-no-loading-anim] .react-loading-skeleton::after {
   animation: none !important;
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
    EFFETS DE FLOU (data-no-blur)
    - backdrop-blur (très coûteux GPU, plante les Smart TV)
-   - filter:blur via classes Tailwind ou inline
+   Les flous de contenu (anti-spoiler) et les filtres vidéo sont préservés.
    ══════════════════════════════════════════════════════════════════════════ */
-html[data-no-blur] [class*="backdrop-blur"] {
+html[data-no-blur] [class*="backdrop-blur"],
+html[data-no-blur] [style*="backdrop-filter"] {
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
   background-color: rgba(10, 10, 15, 0.95) !important;
-}
-html[data-no-blur] [class*="blur-"] {
-  filter: none !important;
-}
-html[data-no-blur] [style*="filter"] {
-  filter: none !important;
-  -webkit-filter: none !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
@@ -78,18 +74,36 @@ html[data-no-transitions] *::before,
 html[data-no-transitions] *::after {
   transition-duration: 0.01ms !important;
   transition-delay: 0ms !important;
+  scroll-behavior: auto !important;
+}
+
+html[data-no-transitions] {
+  scroll-behavior: auto !important;
+}
+
+html[data-no-transitions] .animate-fadeIn,
+html[data-no-transitions] .animate-fadeOut,
+html[data-no-transitions] .animate-card-enter,
+html[data-no-transitions] .animate-skeleton-fade {
+  animation-duration: 0.01ms !important;
+  animation-delay: 0ms !important;
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
-   LEGACY : raccourci Mode Léger
-   Garde-fou : si `data-light-mode="true"` est présent SANS les autres attrs
-   (ex: provider non monté), on coupe quand même tout l'essentiel. En usage
-   normal, LightModeContext ajoute les attrs granulaires en plus, donc ces
-   règles sont redondantes mais inoffensives.
+   MODE LÉGER : aucun mouvement CSS, y compris les animations définies inline
+   ou par une bibliothèque. Les préférences granulaires restent ciblées ;
+   seul le mode léger impose cette suppression sur tout l'arbre.
    ══════════════════════════════════════════════════════════════════════════ */
-html[data-light-mode="true"] [class*="animate-"] {
-  animation: none !important;
-  transition: none !important;
+html[data-light-mode="true"] *,
+html[data-light-mode="true"] *::before,
+html[data-light-mode="true"] *::after {
+  /* Termine aussi les animations inline/personnalisées et les pseudo-éléments.
+     Une durée nulle conserve l'état final et animationend des panneaux. */
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
 }
 
 /* will-change : supprime la promotion de couches GPU partout en Mode Léger. */

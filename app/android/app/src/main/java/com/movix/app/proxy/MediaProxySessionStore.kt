@@ -69,6 +69,7 @@ internal class MediaProxySessionStore(
         val resourceIdsByKey: MutableMap<ResourceKey, String> = mutableMapOf(),
         var lastAccessAt: Long,
         var graceExpiresAt: Long? = null,
+        var retainedByCast: Boolean = false,
     )
 
     private val lock = Any()
@@ -123,7 +124,9 @@ internal class MediaProxySessionStore(
     ): MediaProxySessionRegistration = synchronized(lock) {
         cleanupExpiredLocked()
         while (sessions.size >= maxSessions) {
-            val oldestId = sessions.minByOrNull { it.value.lastAccessAt }?.key ?: break
+            val oldestId = sessions.entries.filterNot { it.value.retainedByCast }
+                .minByOrNull { it.value.lastAccessAt }?.key
+                ?: throw IllegalStateException("All media proxy sessions are retained")
             sessions.remove(oldestId)
         }
 
@@ -336,10 +339,18 @@ internal class MediaProxySessionStore(
         sessions.entries.removeAll { it.value.access.mode == mode }
     }
 
+    fun retainAcceptedCastSession(sessionId: String) = synchronized(lock) {
+        sessions[sessionId]?.takeIf { it.access.mode == MediaProxyMode.CAST_LAN }?.let {
+            it.retainedByCast = true
+            it.graceExpiresAt = null
+        }
+    }
+
     fun replaceAfterAcceptedLoad(oldSessionId: String, graceMs: Long) =
         synchronized(lock) {
             require(graceMs >= 0L) { "Invalid replacement grace" }
             sessions[oldSessionId]?.let {
+                it.retainedByCast = false
                 it.graceExpiresAt = now() + graceMs
             }
         }
@@ -377,7 +388,8 @@ internal class MediaProxySessionStore(
         while (iterator.hasNext()) {
             val session = iterator.next().value
             val graceExpired = session.graceExpiresAt?.let { current > it } == true
-            val idleExpired = session.graceExpiresAt == null && session.lastAccessAt < cutoff
+            val idleExpired = !session.retainedByCast &&
+                session.graceExpiresAt == null && session.lastAccessAt < cutoff
             if (graceExpired || idleExpired) iterator.remove()
         }
     }

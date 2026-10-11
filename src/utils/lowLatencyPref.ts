@@ -26,7 +26,10 @@ function read(): LowLatencyPrefs {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return { ...DEFAULTS };
-    return { ...DEFAULTS, ...JSON.parse(raw) };
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { ...DEFAULTS };
+    const values = parsed as Record<string, unknown>;
+    return { movies: values.movies === true, livetv: values.livetv === true };
   } catch {
     return { ...DEFAULTS };
   }
@@ -36,12 +39,14 @@ export function isLowLatencyEnabled(scope: LowLatencyScope): boolean {
   return read()[scope];
 }
 
-export function setLowLatencyEnabled(scope: LowLatencyScope, enabled: boolean): void {
+export function setLowLatencyEnabled(scope: LowLatencyScope, enabled: boolean): boolean {
   const next = { ...read(), [scope]: enabled };
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   } catch {
-    // quota / mode privé — on ignore, le défaut (off) reste sûr.
+    // Ne pas annoncer un choix que le prochain lecteur ne pourra pas lire.
+    return false;
   }
   window.dispatchEvent(new CustomEvent(LOW_LATENCY_CHANGED_EVENT));
+  return true;
 }

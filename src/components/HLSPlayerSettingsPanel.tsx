@@ -70,6 +70,8 @@ const SOURCE_MAIN_TO_TOP_LEVEL: Record<string, TopLevelSourceId> = {
 };
 
 export interface HLSPlayerSettingsPanelProps extends Record<string, any> {
+  pauseGrayscaleEnabled: boolean;
+  handlePauseGrayscaleChange: (enabled: boolean) => void;
   kisskhSources?: KisskhSource[];
   kisskhSubtitles?: KisskhSubtitleTrack[];
   loadingKisskh?: boolean;
@@ -251,6 +253,8 @@ export function useSettingsPanelTabs(props: HLSPlayerSettingsPanelProps) {
     setSubtitleDelay,
     playbackSpeed,
     handlePlaybackSpeedChange,
+    pauseGrayscaleEnabled,
+    handlePauseGrayscaleChange,
     saveProgressEnabled,
     setSaveProgressEnabled,
     autoNextEpisodeEnabled,
@@ -290,8 +294,6 @@ export function useSettingsPanelTabs(props: HLSPlayerSettingsPanelProps) {
     getVideoOledFilter,
     videoAspectRatio,
     setVideoAspectRatio,
-    zoomState,
-    resetZoom,
     priorityCategory,
   } = props;
 
@@ -1498,23 +1500,21 @@ export function useSettingsPanelTabs(props: HLSPlayerSettingsPanelProps) {
                       <span className="text-xs text-gray-400">{t('watch.formatSource')}</span>
                     </button>
 
-                    {/* Zoom Reset Button */}
                     <div className="mt-4 pt-4 border-t border-gray-700">
-                      <h4 className="text-gray-400 text-xs uppercase tracking-wider mb-3 px-2">{t('watch.mobileZoom')}</h4>
                       <button
-                        onClick={resetZoom}
-                        disabled={!zoomState.isZoomed}
-                        className={`w-full px-4 py-3 text-sm text-left rounded-lg mb-2 flex justify-between items-center transition-colors ${
-                          zoomState.isZoomed 
-                            ? 'bg-red-600/20 hover:bg-red-600/30 border border-red-600/50' 
-                            : 'bg-gray-900/40 text-gray-500 cursor-not-allowed'
-                        }`}
+                        type="button"
+                        role="switch"
+                        aria-checked={pauseGrayscaleEnabled}
+                        aria-label={t('watch.pauseGrayscale')}
+                        onClick={() => handlePauseGrayscaleChange(!pauseGrayscaleEnabled)}
+                        className="w-full px-4 py-3 text-sm text-left rounded-lg flex justify-between items-center gap-4 bg-gray-900/60 hover:bg-gray-800/80 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
                       >
-                        <span className={zoomState.isZoomed ? 'text-red-500 font-medium' : 'text-gray-500'}>
-                          🔄 {t('watch.resetZoom')}
+                        <span>
+                          <span className="block text-white">{t('watch.pauseGrayscale')}</span>
+                          <span className="block mt-1 text-xs text-gray-400">{t('watch.pauseGrayscaleDesc')}</span>
                         </span>
-                        <span className={`text-xs ${zoomState.isZoomed ? 'text-red-400' : 'text-gray-600'}`}>
-                          {zoomState.isZoomed ? `${Math.round(zoomState.scale * 100)}%` : '100%'}
+                        <span aria-hidden="true" className={`relative w-10 h-5 shrink-0 rounded-full transition-colors ${pauseGrayscaleEnabled ? 'bg-red-600' : 'bg-gray-600'}`}>
+                          <span className={`absolute top-0.5 left-0.5 h-4 w-4 bg-white rounded-full transition-transform ${pauseGrayscaleEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
                         </span>
                       </button>
                     </div>

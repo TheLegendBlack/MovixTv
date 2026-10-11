@@ -62,6 +62,9 @@ export function buildBridgeRuntime(
   var _mediaProxyXhrRoutingEnabled = ${mediaProxyXhrRoutingEnabled};
   var _mediaProxyCapability = null;
   var _mediaProxyGeneration = null;
+  var _playlistProxySessions = new Map();
+  // Inférieur aux 30 minutes d'expiration native ; renouvelé à chaque lecture.
+  var _playlistProxyIdleMs = 25 * 60 * 1000;
 
   if (_mediaProxyCapabilityEnabled) {
     try {
@@ -332,6 +335,54 @@ export function buildBridgeRuntime(
     return headersStr;
   }
 
+  function requestPlaybackMediaProxy(details) {
+    var method = (details.method || 'GET').toUpperCase();
+    if (method !== 'GET' || !/\\.m3u8(?:$|[?#])/i.test(details.url)) {
+      return requestLocalMediaProxy(details);
+    }
+
+    // Seule l'adresse du relais est réutilisée : chaque rechargement continue
+    // de télécharger la playlist live. Une nouvelle session changerait les URI
+    // des mêmes segments et provoquerait "media sequence mismatch" dans HLS.
+    var headers = withWebViewIdentity(details.headers);
+    var headerKey = Object.keys(headers).map(function(name) {
+      return [name.toLowerCase(), headers[name]];
+    }).sort(function(a, b) { return a[0].localeCompare(b[0]); });
+    var key = JSON.stringify([method, details.url, headerKey]);
+    var now = Date.now();
+    var cached = _playlistProxySessions.get(key);
+    if (cached && now - cached.lastUsedAt < _playlistProxyIdleMs) {
+      cached.lastUsedAt = now;
+      _playlistProxySessions.delete(key);
+      _playlistProxySessions.set(key, cached);
+      return cached.promise;
+    }
+
+    var entry = { lastUsedAt: now, promise: null };
+    function forgetFailedOpen() {
+      if (_playlistProxySessions.get(key) === entry) {
+        _playlistProxySessions.delete(key);
+      }
+    }
+    entry.promise = requestLocalMediaProxy({
+      url: details.url, method: method, headers: headers
+    }).then(function(response) {
+      if (!response.success || typeof response.value !== 'string' || !response.value) {
+        forgetFailedOpen();
+      }
+      return response;
+    }, function(error) {
+      forgetFailedOpen();
+      throw error;
+    });
+    _playlistProxySessions.delete(key);
+    _playlistProxySessions.set(key, entry);
+    while (_playlistProxySessions.size > 32) {
+      _playlistProxySessions.delete(_playlistProxySessions.keys().next().value);
+    }
+    return entry.promise;
+  }
+
   async function tryLocalMediaProxy(details) {
     if (!_nativeWindowFetch) {
       throw new Error('Native WebView fetch unavailable');
@@ -345,7 +396,7 @@ export function buildBridgeRuntime(
       }
     }
 
-    var openResponse = await requestLocalMediaProxy({
+    var openResponse = await requestPlaybackMediaProxy({
       url: details.url,
       method: details.method,
       headers: upstreamHeaders
@@ -392,9 +443,20 @@ export function buildBridgeRuntime(
     var headers = withWebViewIdentity(details.headers);
 
     var bodyStr = null;
+    var bodyEncoding;
     if (details.data != null) {
       if (typeof details.data === 'string') {
         bodyStr = details.data;
+      } else if (details.data instanceof ArrayBuffer || ArrayBuffer.isView(details.data)) {
+        var bodyBytes = details.data instanceof ArrayBuffer
+          ? new Uint8Array(details.data)
+          : new Uint8Array(details.data.buffer, details.data.byteOffset, details.data.byteLength);
+        var binaryBody = '';
+        for (var offset = 0; offset < bodyBytes.length; offset += 32768) {
+          binaryBody += String.fromCharCode.apply(null, bodyBytes.subarray(offset, offset + 32768));
+        }
+        bodyStr = btoa(binaryBody);
+        bodyEncoding = 'base64';
       } else if (details.data instanceof URLSearchParams) {
         bodyStr = details.data.toString();
       } else {
@@ -408,6 +470,7 @@ export function buildBridgeRuntime(
       method: (details.method || 'GET').toUpperCase(),
       headers: headers,
       body: bodyStr,
+      bodyEncoding: bodyEncoding,
       responseType: details.responseType || '',
       timeout: details.timeout || 30000
     };

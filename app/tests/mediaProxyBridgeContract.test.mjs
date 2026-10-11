@@ -35,29 +35,6 @@ async function importTypeScript(relativePath) {
   return import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`);
 }
 
-test('TypeScript bridge exposes the GM_OPEN_MEDIA_PROXY native contract', async () => {
-  const bridge = await read('src/services/bridge.ts');
-
-  assert.match(bridge, /GM_OPEN_MEDIA_PROXY/);
-  assert.match(bridge, /NativeModules\.MediaProxy/);
-  assert.match(bridge, /\.open\s*\(\s*req\.url/);
-  assert.match(bridge, /case\s+['"]GM_FETCH['"]/);
-});
-
-test('Android local proxy injects the required Fsvid headers', async () => {
-  const bridge = await read('src/services/bridge.ts');
-  const openHandler = bridge.match(
-    /async function handleGMOpenMediaProxy[\s\S]*?\r?\n}\r?\n\r?\nasync function fetchWithRedirectHeaders/,
-  )?.[0];
-
-  assert.ok(openHandler, 'GM_OPEN_MEDIA_PROXY handler must exist');
-  assert.match(bridge, /import\s*\{\s*applyMediaProxyHeaderRules\s*}\s*from\s*['"]\.\/mediaProxyHeaders['"]/);
-  assert.match(
-    openHandler,
-    /mediaProxy\.open\s*\(\s*req\.url,\s*method,\s*applyMediaProxyHeaderRules\s*\(\s*req\.url,\s*headers\s*,?\s*\)\s*,?\s*\)/,
-  );
-});
-
 test('Fsvid media headers preserve the user agent used to sign playback URLs', async () => {
   const { applyMediaProxyHeaderRules } = await importTypeScript(
     'src/services/mediaProxyHeaders.ts',

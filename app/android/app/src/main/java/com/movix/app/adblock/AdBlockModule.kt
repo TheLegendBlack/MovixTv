@@ -41,6 +41,17 @@ class AdBlockModule(
         promise.resolve(map)
     }
 
+    /**
+     * Déclare l'hôte du site chargé. Synchrone : `BrowserScreen` l'appelle avant
+     * de monter la WebView, pour que la première requête de la page soit déjà
+     * jugée comme celle du site et non d'une iframe tierce.
+     */
+    @ReactMethod(isBlockingSynchronousMethod = true)
+    fun trustSiteHost(host: String): Boolean {
+        AdBlockList.trustSiteHost(host)
+        return true
+    }
+
     @ReactMethod
     fun resetStats(promise: Promise) {
         AdBlockInterceptor.resetStats()

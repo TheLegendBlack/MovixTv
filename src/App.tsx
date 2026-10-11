@@ -13,6 +13,7 @@ import { RouteProgressBar } from './components/RouteProgressBar';
 import { startVipVerification } from './utils/vipUtils';
 import { broadcastAuthChange, clearStoredAuthSession } from './utils/accountAuth';
 import { detectInitialLanguage } from './i18n';
+import { readLocalStorage } from './utils/browserStorage';
 import { PLAYER_FULLSCREEN_HOST_ID, releaseHostFullscreen } from './utils/playerFullscreenPersistence';
 import {
   pushPriorityToExtension,
@@ -103,11 +104,11 @@ type Axios401Window = Window & { __axios401Set?: boolean; __forceClearInProgress
   );
 })();
 
-const shouldPreserveScrollOnBack = () => localStorage.getItem('settings_disable_auto_scroll') === 'true';
+const shouldPreserveScrollOnBack = () => readLocalStorage('settings_disable_auto_scroll') === 'true';
 
-const shouldDisableRouteScrollToTop = () => localStorage.getItem('settings_disable_route_scroll_to_top') === 'true';
+const shouldDisableRouteScrollToTop = () => readLocalStorage('settings_disable_route_scroll_to_top') === 'true';
 
-const isSmoothScrollEnabled = () => localStorage.getItem('settings_smooth_scroll') !== 'false';
+const isSmoothScrollEnabled = () => readLocalStorage('settings_smooth_scroll') !== 'false';
 
 const shouldAnimateScrollToTop = () => {
   if (!isSmoothScrollEnabled()) {
@@ -168,11 +169,13 @@ const ScrollToTop = () => {
   const location = useLocation();
   const navigationType = useNavigationType();
   const prevPathRef = React.useRef(location.pathname);
+  const prevScrollUrlRef = React.useRef<string | null>(null);
+  const prevScrollNavigationTypeRef = React.useRef(navigationType);
 
   useEffect(() => {
     const handleRestorationSync = (event?: StorageEvent) => {
       if (
-        event instanceof StorageEvent &&
+        event?.type === 'storage' &&
         event.key &&
         event.key !== 'settings_disable_auto_scroll' &&
         event.key !== 'settings_disable_route_scroll_to_top'
@@ -202,6 +205,13 @@ const ScrollToTop = () => {
   useLayoutEffect(() => {
     const { preserveScrollOnBack, disableRouteScrollToTop } = syncHistoryScrollRestoration();
     const isBackOrForward = navigationType === 'POP';
+    const scrollUrl = location.pathname + location.search;
+    const navigationTypeChanged = prevScrollNavigationTypeRef.current !== navigationType;
+    prevScrollNavigationTypeRef.current = navigationType;
+    // Fermer un lecteur via l'historique change PUSH en POP sans changer de
+    // page : conserver le défilement et éviter un nouveau scan du DOM.
+    if (prevScrollUrlRef.current === scrollUrl && navigationTypeChanged) return undefined;
+    prevScrollUrlRef.current = scrollUrl;
 
     const pathChanged = prevPathRef.current !== location.pathname;
     prevPathRef.current = location.pathname;
@@ -300,13 +310,15 @@ const lazyComponentCache = new Map<string, React.LazyExoticComponent<React.Compo
 const getCachedLazy = (entry: RouteEntry) => {
   let cached = lazyComponentCache.get(entry.path);
   if (!cached) {
-    cached = lazy(entry.loader as () => Promise<{ default: React.ComponentType<unknown> }>);
+    // Le pattern du registre est stable entre les contenus d'une même route et
+    // permet de borner la reprise Safari sans stocker l'identifiant de l'URL.
+    cached = lazy(() => entry.loader({ routeKey: entry.path }));
     lazyComponentCache.set(entry.path, cached);
   }
   return cached;
 };
 
-// Wrapper qui injecte `key={location.pathname}` sur le composant lazy. Sans ça,
+// Wrapper qui injecte par défaut `key={location.pathname}` sur le composant lazy. Sans ça,
 // quand l'utilisateur navigue entre deux URLs matchant le même Route pattern
 // (ex. /watch/tv/abc/… → /watch/tv/xyz/…), React Router réutilise l'instance
 // composant avec juste les params updated. Les useState de la page gardent les
@@ -315,11 +327,13 @@ const getCachedLazy = (entry: RouteEntry) => {
 const RouteLazyContent: React.FC<{
   Lazy: React.LazyExoticComponent<React.ComponentType<unknown>>;
   fallback: React.ReactNode;
-}> = ({ Lazy, fallback }) => {
+  getComponentKey?: (pathname: string) => string;
+}> = ({ Lazy, fallback, getComponentKey }) => {
   const location = useLocation();
+  const componentKey = getComponentKey?.(location.pathname) ?? location.pathname;
   return (
     <DelayedSuspense fallback={fallback}>
-      <Lazy key={location.pathname} />
+      <Lazy key={componentKey} />
     </DelayedSuspense>
   );
 };
@@ -330,6 +344,7 @@ const renderRouteEntry = (entry: RouteEntry) => {
     <RouteLazyContent
       Lazy={Lazy}
       fallback={entry.fallback ?? <RouteProgressBar />}
+      getComponentKey={entry.getComponentKey}
     />
   );
   return <Route key={entry.path} path={entry.path} element={element} />;
@@ -388,8 +403,8 @@ const AppShell: React.FC = () => {
 
 // Wraps the tree in a <MotionConfig> tied to the Mode léger / animation prefs.
 // When `transitions` is disabled (manually or because Mode léger is on),
-// framer-motion treats EVERY animation as if `prefers-reduced-motion: reduce`
-// were set — initial/animate/exit are skipped on transform/opacity for free.
+// MotionConfig limite les transformations. LightModeProvider coupe aussi
+// les fondus et les délais via MotionGlobalConfig.skipAnimations.
 const AnimationMotionConfig: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { effectivePrefs } = useLightMode();
   return (
