@@ -18,8 +18,8 @@ export interface UseFocusScopeOptions {
    * l'écran. `null` ferme la sortie dans cette direction.
    */
   neighbors?: {
-    left?: string;
-    right?: string;
+    left?: string | null;
+    right?: string | null;
     up?: string | null;
     down?: string | null;
   };
@@ -104,7 +104,7 @@ export function useFocusItem<E extends HTMLElement = HTMLElement>(
   scopeId: string,
   index: number,
 ): FocusItemState<E> {
-  const { registerItem, focus, focused } = useTvFocusContext();
+  const { registerItem, focus, isCurrent, focused } = useTvFocusContext();
   const ref = useRef<E>(null);
 
   useEffect(() => {
@@ -122,8 +122,11 @@ export function useFocusItem<E extends HTMLElement = HTMLElement>(
       // -1 et non 0 : le parcours appartient au moteur. Laisser Tab créer un
       // second ordre de navigation concurrent ne ferait que semer la confusion.
       tabIndex: -1,
+      // Focus reçu d'ailleurs que du moteur (clic, focus natif) : on l'informe.
+      // Quand c'est le moteur qui vient de le donner, sa position est déjà la
+      // bonne : le relancer refaisait tout le déplacement une seconde fois.
       onFocus: () => {
-        if (!isFocused) focus({ scopeId, index });
+        if (!isFocused && !isCurrent({ scopeId, index })) focus({ scopeId, index });
       },
     },
   };

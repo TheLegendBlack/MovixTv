@@ -4,6 +4,7 @@ import { useTvFocusContext } from '../nav/focusContext';
 import { useFocusItem, useFocusScope } from '../nav/hooks';
 import { peekFocusRestore } from '../nav/focusRestore';
 import { TV_SAFE_X } from './TvRow';
+import { EditionLogo } from '../edition';
 
 /**
  * Barre de navigation horizontale, dans l'esprit de Netflix.
@@ -223,8 +224,13 @@ export const TvTopNav: React.FC<TvTopNavProps> = ({
   // du document révèle. Après tous les effets des enfants : les pastilles sont
   // déjà enregistrées auprès du moteur.
   useEffect(() => {
+    // Seul un contrôle compte comme focus posé par la page. Chromium donne
+    // aussi le focus à un conteneur qui défile (la boîte de la page) quand la
+    // WebView reçoit le focus au lancement : pris pour un focus de la page, il
+    // laissait le moteur sans position, et la première flèche ne faisait
+    // qu'allumer cette pastille (Edenwood, WebView 154, 14/10/2026).
     const active = document.activeElement;
-    if (active && active !== document.body) return;
+    if (active && active !== document.body && active.matches('button, a[href], input, textarea, select, [tabindex]')) return;
     // Retour d'une collection : la page va rendre le focus à la carte quittée
     // dès que sa rangée est là ; allumer la pastille entre-temps ferait un
     // saut de plus à l'écran.
@@ -248,12 +254,13 @@ export const TvTopNav: React.FC<TvTopNavProps> = ({
       {/* Logo, à gauche contre la marge, hors du flux : le groupe reste centré
           sur la dalle. Il suit le groupe texte dans sa transformation et
           disparaît donc sur la recherche, où les icônes prennent sa place.
-          Provisoire jusqu'à la nouvelle identité. */}
+          Le logo de l'édition (`edition.tsx`), centré sur la hauteur des
+          pastilles. */}
       <span
         aria-hidden
-        className="pointer-events-none absolute text-[22px] font-black tracking-tight"
-        style={{ ...groupStyle(!folded, -SLIDE), left: TV_SAFE_X, top: 24, lineHeight: '36px' }}>
-        Movix TV
+        className="pointer-events-none absolute flex items-center"
+        style={{ ...groupStyle(!folded, -SLIDE), left: TV_SAFE_X, top: 24, height: PILL_HEIGHT }}>
+        <EditionLogo />
       </span>
       <div
         ref={scopeRef}

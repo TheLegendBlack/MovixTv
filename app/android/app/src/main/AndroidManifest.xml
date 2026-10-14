@@ -28,9 +28,9 @@
     <application
         android:name=".MainApplication"
         android:label="@string/app_name"
-        android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher_round"
-        android:banner="@drawable/tv_banner"
+        android:icon="${appIcon}"
+        android:roundIcon="${appRoundIcon}"
+        android:banner="${appBanner}"
         android:allowBackup="false"
         android:theme="@style/AppTheme"
         android:usesCleartextTraffic="true"

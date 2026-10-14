@@ -12,16 +12,32 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
 }
 
+// Identité de l'application : celle du dépôt par défaut, remplacée par
+// `edition.properties` quand il existe (identifiant, nom, numéros de version,
+// icône et bannière). Ses ressources propres vont dans `src/edition/res`.
+def editionPropertiesFile = rootProject.file("app/edition.properties")
+def edition = new Properties()
+if (editionPropertiesFile.exists()) {
+    edition.load(new InputStreamReader(new FileInputStream(editionPropertiesFile), "UTF-8"))
+}
+
 android {
     namespace "com.movix.app"
     compileSdk rootProject.ext.compileSdkVersion
 
     defaultConfig {
-        applicationId "com.movix.app"
+        applicationId edition.getProperty("applicationId", "com.movix.app")
         minSdk rootProject.ext.minSdkVersion
         targetSdk rootProject.ext.targetSdkVersion
-        versionCode 42
-        versionName "2.6.5"
+        versionCode Integer.parseInt(edition.getProperty("versionCode", "42"))
+        versionName edition.getProperty("versionName", "2.6.5")
+
+        resValue "string", "app_name", edition.getProperty("appName", "Movix")
+        manifestPlaceholders = [
+            appIcon: edition.getProperty("appIcon", "@mipmap/ic_launcher"),
+            appRoundIcon: edition.getProperty("appRoundIcon", "@mipmap/ic_launcher_round"),
+            appBanner: edition.getProperty("appBanner", "@drawable/tv_banner"),
+        ]
 
         buildConfigField "int", "VERSION_CODE_INT", "${versionCode}"
         buildConfigField "String", "VERSION_NAME_STR", "\"${versionName}\""
@@ -50,6 +66,21 @@ android {
             minifyEnabled false
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
             signingConfig keystoreProperties['MOVIX_RELEASE_STORE_FILE'] ? signingConfigs.release : signingConfigs.debug
+            // Téléviseurs et boîtiers Android sont ARM : 64 bits pour les
+            // récents et puissants, 32 bits pour l'entrée de gamme (l'Edenwood).
+            // x86 et x86_64 ne servaient qu'aux émulateurs (et au Nexus Player,
+            // arrêté en 2018) : 29 Mo sur 67,5 de l'APK, mesuré le 14/10/2026.
+            // Chaque appareil prend toujours la meilleure variante qu'il sait
+            // exécuter. Le build debug garde les quatre, pour les émulateurs.
+            ndk {
+                abiFilters "armeabi-v7a", "arm64-v8a"
+            }
+        }
+    }
+
+    sourceSets {
+        main {
+            if (file("src/edition/res").exists()) res.srcDirs += "src/edition/res"
         }
     }
 

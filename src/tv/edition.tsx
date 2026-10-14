@@ -24,3 +24,6 @@ export const EDITION_ROUTES: ReadonlyArray<{ path: string; element: React.ReactE
 export function useEditionSettingsEntries(_navigate: NavigateFunction): SettingsEntry[] {
   return [];
 }
+
+/** Logo de la barre de navigation, à gauche : le nom de l'application. */
+export const EditionLogo: React.FC = () => <span className="text-[22px] font-black tracking-tight">Movix TV</span>;

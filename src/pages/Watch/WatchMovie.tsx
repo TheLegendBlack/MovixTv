@@ -2853,7 +2853,7 @@ const WatchMovie: React.FC = () => {
               </p>
               <div className="flex justify-center gap-4">
                 <button
-                  onClick={() => navigate(`/movie/${id}`)}
+                  onClick={() => navigate(-1)}
                   className="px-6 py-3 bg-gray-800 hover:bg-gray-700 text-white rounded-lg transition-all duration-200 shadow-lg"
                 >
                   {t('watch.back')}
@@ -2935,7 +2935,7 @@ const WatchMovie: React.FC = () => {
         <div className="w-full h-full flex items-center justify-center">
           {/* Back to Info Button */}
           <button
-            onClick={() => navigate(`/movie/${id}`)}
+            onClick={() => navigate(-1)}
             className="fixed top-6 left-8 z-[9999] flex items-center gap-2 px-3 py-2 rounded-lg bg-black/70 hover:bg-black/90 text-white shadow-lg transition-all duration-200"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -3790,7 +3790,7 @@ const WatchMovie: React.FC = () => {
         <div className="w-full h-full flex flex-col items-center justify-center relative">
           {/* Back to Info Button */}
           <button
-            onClick={() => navigate(`/movie/${id}`)}
+            onClick={() => navigate(-1)}
             className="fixed top-6 left-8 z-[9999] flex items-center gap-2 px-3 py-2 rounded-lg bg-black/70 hover:bg-black/90 text-white shadow-lg transition-all duration-200"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -3920,7 +3920,7 @@ const WatchMovie: React.FC = () => {
         <div className="w-full h-full flex flex-col items-center justify-center relative">
           {/* Back to Info Button */}
           <button
-            onClick={() => navigate(`/movie/${id}`)}
+            onClick={() => navigate(-1)}
             className="fixed top-6 left-8 z-[9999] flex items-center gap-2 px-3 py-2 rounded-lg bg-black/70 hover:bg-black/90 text-white shadow-lg transition-all duration-200"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

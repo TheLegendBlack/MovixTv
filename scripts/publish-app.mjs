@@ -13,6 +13,7 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 
 const PATHS = {
   buildGradle: path.join(REPO_ROOT, 'app/android/app/build.gradle'),
+  editionProps: path.join(REPO_ROOT, 'app/android/app/edition.properties'),
   keystoreProps: path.join(REPO_ROOT, 'app/android/app/keystore.properties'),
   gradleWrapper: path.join(REPO_ROOT, 'app/android/gradlew'),
   apkOutput: path.join(
@@ -23,7 +24,10 @@ const PATHS = {
   manifest: path.join(REPO_ROOT, 'app/version.json'),
 };
 
+// Adresse publique de l'APK publié, écrite dans le manifeste. Pour votre
+// propre application : `MOVIX_APK_URL=https://… node scripts/publish-app.mjs`.
 const APK_URL =
+  process.env.MOVIX_APK_URL ||
   'https://github.com/movixstream/MovixOpenSource/raw/refs/heads/main/app/movix-android.apk';
 
 function die(msg) {
@@ -35,14 +39,30 @@ function log(step, msg) {
   console.log(`[${step}] ${msg}`);
 }
 
+/**
+ * Numéros de version. Depuis 10/2026, `build.gradle` les lit dans
+ * `edition.properties` s'il existe, sinon prend ses valeurs par défaut
+ * (`edition.getProperty("versionCode", "42")`) : on lit au même endroit.
+ */
 function readBuildGradle() {
-  const txt = fs.readFileSync(PATHS.buildGradle, 'utf8');
-  const vc = txt.match(/versionCode\s+(\d+)/);
-  const vn = txt.match(/versionName\s+"([^"]+)"/);
-  if (!vc || !vn) {
-    die('Could not parse versionCode/versionName from build.gradle');
+  if (fs.existsSync(PATHS.editionProps)) {
+    const props = Object.fromEntries(
+      fs.readFileSync(PATHS.editionProps, 'utf8')
+        .split('\n')
+        .filter(line => /^[A-Za-z_][\w.]*=/.test(line))
+        .map(line => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1).trim()]),
+    );
+    if (/^\d+$/.test(props.versionCode ?? '') && props.versionName) {
+      return { versionCode: Number(props.versionCode), versionName: props.versionName, source: 'edition.properties' };
+    }
   }
-  return { versionCode: Number(vc[1]), versionName: vn[1] };
+  const txt = fs.readFileSync(PATHS.buildGradle, 'utf8');
+  const vc = txt.match(/getProperty\("versionCode",\s*"(\d+)"\)/) ?? txt.match(/versionCode\s+(\d+)/);
+  const vn = txt.match(/getProperty\("versionName",\s*"([^"]+)"\)/) ?? txt.match(/versionName\s+"([^"]+)"/);
+  if (!vc || !vn) {
+    die('versionCode/versionName introuvables (edition.properties ou build.gradle)');
+  }
+  return { versionCode: Number(vc[1]), versionName: vn[1], source: 'build.gradle' };
 }
 
 function readCurrentManifest() {
@@ -122,22 +142,23 @@ async function main() {
 
   if (!fs.existsSync(PATHS.keystoreProps)) {
     die(
-      'app/android/keystore.properties absent — APK serait debug-signed (install = échec signature).\n' +
+      'app/android/app/keystore.properties absent — APK serait debug-signed (install = échec signature).\n' +
         '  Configure la release keystore avant de publier.',
     );
   }
 
-  const { versionCode, versionName } = readBuildGradle();
+  const { versionCode, versionName, source } = readBuildGradle();
   const current = readCurrentManifest();
   if (current && typeof current.buildNumber === 'number' && versionCode <= current.buildNumber) {
     die(
       `versionCode (${versionCode}) doit être > current.buildNumber (${current.buildNumber}).\n` +
-        '  Bump `versionCode` dans app/android/app/build.gradle d\'abord.',
+        `  Augmenter \`versionCode\` dans app/android/app/${source} d'abord.`,
     );
   }
   console.log(
     `  ✓ keystore.properties présent\n` +
-      `  ✓ versionCode=${versionCode}, versionName="${versionName}"` +
+      `  ✓ versionCode=${versionCode}, versionName="${versionName}" (${source})\n` +
+      `  ✓ APK publié à ${APK_URL}` +
       (current ? ` (current JSON buildNumber=${current.buildNumber})` : ''),
   );
 
@@ -185,7 +206,7 @@ async function main() {
     console.log(
       '\n─────────────────────────────────────────────\n' +
         '✓ Publish ready. Next steps:\n\n' +
-        '  git add app/version.json app/movix-android.apk app/android/app/build.gradle\n' +
+        `  git add app/version.json app/movix-android.apk app/android/app/${source}\n` +
         `  git commit -m "release(app): v${versionName} (build ${versionCode})"\n` +
         '  git push\n' +
         '─────────────────────────────────────────────\n',

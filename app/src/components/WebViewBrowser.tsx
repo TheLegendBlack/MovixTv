@@ -269,6 +269,15 @@ const WebViewBrowser = forwardRef<WebViewBrowserRef, WebViewBrowserProps>(
       [onError],
     );
 
+    // Au lancement, la vue Android a le focus mais pas la page qu'elle
+    // affiche (`document.hasFocus()` faux) : le premier appui de la
+    // télécommande ne servait qu'à le lui donner, et n'atteignait jamais le
+    // site. Mesuré le 14/10/2026 sur l'Edenwood : la première flèche après
+    // chaque lancement était perdue.
+    const onLoadEnd = useCallback(() => {
+      if (IS_TV) webViewRef.current?.requestFocus();
+    }, []);
+
     // Le renvoi de la console est armé dans le script injecté : il faut donc le
     // reconstruire quand la capture change. La bascule ne prend effet qu'au
     // chargement suivant de la page, `injectedJavaScriptBeforeContentLoaded`
@@ -319,6 +328,7 @@ const WebViewBrowser = forwardRef<WebViewBrowserRef, WebViewBrowserProps>(
         }}
         // Navigation
         onNavigationStateChange={onNavigationStateChange}
+        onLoadEnd={onLoadEnd}
         // Pop-ups : hors origine Movix -> navigateur système
         setSupportMultipleWindows={true}
         onOpenWindow={onOpenWindow}

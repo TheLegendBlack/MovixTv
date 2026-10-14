@@ -19,6 +19,7 @@ import type {
   UpdateStage,
 } from '../hooks/useAppUpdate';
 import { isValidHttpsUpdateUrl } from '../hooks/useAppUpdate';
+import { EDITION_APP_NAME, EDITION_LOGO } from '../edition';
 
 type Props = {
   manifest: UpdateManifest;
@@ -150,7 +151,7 @@ export default function UpdateScreen({
       <View style={styles.container}>
         <View style={styles.inner}>
           <Image
-            source={require('../../android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png')}
+            source={EDITION_LOGO}
             style={styles.icon}
             resizeMode="contain"
           />
@@ -196,7 +197,7 @@ export default function UpdateScreen({
     <View style={styles.container}>
       <View style={styles.inner}>
         <Image
-          source={require('../../android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png')}
+          source={EDITION_LOGO}
           style={styles.icon}
           resizeMode="contain"
         />
@@ -255,7 +256,7 @@ export default function UpdateScreen({
         {stage === 'need_permission' && (
           <>
             <Text style={styles.statusText}>
-              Autorise Movix à installer des APK pour continuer.
+              Autorise {EDITION_APP_NAME} à installer des APK pour continuer.
             </Text>
             <TvButton
               label="Ouvrir les réglages"

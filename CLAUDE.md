@@ -107,7 +107,8 @@ src/
     settings/                # écrans de réglages : kit, saisie des clés VIP et TMDB
     devicePerformance.ts     # palier de performance mesuré, lu par le mode léger
     components/              # TvTopNav, TvRow, TvCard, TvMoreCard, TvKeyboard, TvPreviewBanner
-    data/tmdb.ts             # registre des rangées (ROWS) et listes par page (TV_*_ROWS)
+    data/tmdb.ts             # chargement des rangées TMDB (axios, langue, clé)
+    data/rowRegistry.ts      # registre des rangées (ROWS) et listes par page (TV_*_ROWS), module pur
     data/pages.ts            # les quatre pages, leurs rangées par défaut et leur bannière
     nav/                     # moteur de focus : TvFocusProvider, resolveMove, hooks, focusRestore
     player/                  # useTvPlayerRemote (télécommande), contrôles, thème
@@ -125,7 +126,8 @@ app/
   patches/react-native-webview+13.16.1.patch   # hook requestInterceptor du bloqueur + isTopFrame
 userscript/movix.user.js     # SOURCE des extracteurs ; éditer ici puis `npm run build:userscript`
 scripts/                     # tv-dev-up.sh, tv-dev.sh, publish-app.mjs
-public/movix.png             # seul asset public restant (sonde DNS du lecteur)
+public/movix.png             # sonde DNS du lecteur (requête HEAD) et image de partage
+public/favicon.png           # seule icône déclarée (8 Ko) : la WebView téléchargeait movix.png (751 Ko) à chaque lancement
 ```
 
 ## Conventions
@@ -154,8 +156,11 @@ public/movix.png             # seul asset public restant (sonde DNS du lecteur)
 - **Reprise du dépôt amont** (https://github.com/movixstream/MovixOpenSource,
   nouvelle adresse depuis 10/2026) : fusion à trois voies fichier par fichier
   (`git merge-file`), base = dernier commit amont déjà intégré, jamais une
-  copie brute. Dernier commit intégré : **`0e7cd86`** (08/10/2026), le
-  11/10/2026 ; sauvegarde d'avant fusion dans `.tv-backup/avant-maj-amont-2026-10/`.
+  copie brute. Dernier commit intégré : **`8402e33`** (14/10/2026), le
+  14/10/2026 : seul `userscript/movix.user.js` nous concernait (décodeur
+  Fsvid/Vidzy, `d326f22`), puis `npm run build:userscript` et un APK.
+  Sauvegardes d'avant fusion : `.tv-backup/avant-maj-amont-2026-10/` (fusion
+  de `0e7cd86`, 11/10/2026) et `.tv-backup/maj-amont-d326f22/`.
   Gardés volontairement à notre version : `vite.config.ts` (service worker,
   bundle legacy, Sentry du site web), `ErrorBoundary.tsx` (la version amont
   tire `@sentry/react`, trop lourd pour le SoC), `AdFreePlayerAds.tsx` (jamais
@@ -189,6 +194,18 @@ public/movix.png             # seul asset public restant (sonde DNS du lecteur)
   la lisent à leur chargement, l'écran de saisie recharge donc la page.
 - Vérifier sans la TV : build puis Chrome sans interface à 960×540, densité 2
   (méthode de comparaison des couleurs calculées avant/après).
+- **Moteur de focus** (14/10/2026, `nav/TvFocusProvider.tsx`) : toutes les
+  flèches sont gardées par le moteur (`preventDefault`, même sans cible :
+  sinon la navigation spatiale de Chromium mesure chaque élément de la page) ;
+  un appui change la position tout de suite mais l'affichage (React, focus du
+  DOM, défilement) se fait une fois par image ; OK frappé avant cet affichage
+  est renvoyé à la nouvelle carte. Mesuré sur l'Edenwood, rafale de 30
+  flèches : attente moyenne par appui 250 ms → 20 ms, tâches bloquantes
+  ~600 ms → 0 à 140 ms. Au lancement, la page n'a pas le focus clavier : le
+  shell le lui donne à la fin du chargement (`requestFocus` dans
+  `WebViewBrowser`), et `TvTopNav` ne prend pour « focus déjà posé » qu'un
+  contrôle, pas la boîte qui défile que Chromium focalise (sinon la première
+  flèche était perdue, Edenwood, WebView 154, 14/10/2026).
 - **Page Paramètres** : six lignes au plus dans 540 px (mesuré le 11/10/2026,
   la septième sortait de l'écran). Une nouvelle entrée en remplace une.
 
@@ -206,6 +223,7 @@ public/movix.png             # seul asset public restant (sonde DNS du lecteur)
 - Essai d'un site hébergé sur la TV sans APK release : passer `DEV_SITE_URL`
   (`app/src/config/index.ts`) sur son adresse, relancer l'app, puis remettre
   `http://localhost:3000`.
+
 
 ## Variables d'environnement (`.env`, préfixe `VITE_`)
 

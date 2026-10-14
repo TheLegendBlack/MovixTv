@@ -61,11 +61,18 @@ export const TvFocusProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return stateRef.current.scopes;
   }, []);
 
-  const applyFocus = useCallback((position: Position) => {
-    stateRef.current = rememberPosition(
-      { ...stateRef.current, scopes: orderedScopes() },
-      position,
-    );
+  /** Affichage demandé et pas encore fait (voir `applyFocus`). */
+  const frameRef = useRef<number | null>(null);
+
+  /**
+   * Rend visible la position courante du moteur : état React, rangée, focus du
+   * DOM, défilement. Lit la position au moment où il s'exécute : plusieurs
+   * appuis entre deux images n'en font qu'un affichage, celui de la dernière.
+   */
+  const flush = useCallback(() => {
+    frameRef.current = null;
+    const position = stateRef.current.current;
+    if (!position) return;
     setFocused(position);
 
     // La rangée virtualisée doit d'abord rendre l'élément visé ; s'il n'est pas
@@ -82,7 +89,59 @@ export const TvFocusProvider: React.FC<{ children: React.ReactNode }> = ({ child
     } else {
       pendingRef.current = position;
     }
-  }, [orderedScopes]);
+  }, []);
+
+  /**
+   * Déplace le focus. La position change tout de suite (l'appui suivant part
+   * de là) ; l'affichage, lui, peut attendre l'image suivante (`deferred`,
+   * appuis de la télécommande) : mesuré le 14/10/2026 sur l'Edenwood, une
+   * rafale de flèches à ~20 appuis/s coûtait 60 à 220 ms par appui, et la file
+   * d'attente figeait la télé près d'une seconde. Un seul affichage par image
+   * ne laisse plus les appuis s'empiler.
+   */
+  const applyFocus = useCallback(
+    (position: Position, deferred = false) => {
+      stateRef.current = rememberPosition({ ...stateRef.current, scopes: orderedScopes() }, position);
+      if (deferred) {
+        frameRef.current ??= requestAnimationFrame(flush);
+        return;
+      }
+      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+      flush();
+    },
+    [orderedScopes, flush],
+  );
+
+  useEffect(() => {
+    // Toute autre touche (OK, Retour…) agit sur l'élément focalisé du DOM : un
+    // affichage encore en attente est fait d'abord, sinon OK frappé dans la même
+    // image qu'une flèche viserait la carte précédente. Phase de capture : avant
+    // les écouteurs des éléments.
+    const catchUp = (event: KeyboardEvent) => {
+      if (DIRECTION_BY_KEY[event.key] || frameRef.current === null) return;
+      cancelAnimationFrame(frameRef.current);
+      flush();
+      // La touche visait déjà l'ancien élément (sa cible est fixée à l'envoi) :
+      // on l'arrête et on la renvoie à l'élément qui vient de prendre le focus.
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && active !== event.target) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        active.dispatchEvent(new KeyboardEvent('keydown', { key: event.key, code: event.code, bubbles: true, cancelable: true }));
+      }
+    };
+    window.addEventListener('keydown', catchUp, true);
+    return () => {
+      window.removeEventListener('keydown', catchUp, true);
+      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+    };
+  }, [flush]);
+
+  /** Vrai si le moteur est déjà sur cette position (affichée ou en attente d'affichage). */
+  const isCurrent = useCallback((position: Position) => {
+    const current = stateRef.current.current;
+    return current !== null && current.scopeId === position.scopeId && current.index === position.index;
+  }, []);
 
   const registerScope = useCallback(
     (config: Scope, element: HTMLElement, reveal?: (index: number) => void) => {
@@ -127,10 +186,16 @@ export const TvFocusProvider: React.FC<{ children: React.ReactNode }> = ({ child
         return;
       }
 
+      // Toutes les flèches reviennent au moteur, même sans cible. Laissée au
+      // navigateur, une flèche sans cible (bout de rangée) déclenchait la
+      // navigation spatiale de Chromium, qui mesure chaque élément focalisable
+      // de la page : des milliers de recalculs de mise en page par rafale,
+      // mesurés le 14/10/2026 sur l'Edenwood.
+      event.preventDefault();
+
       const next = resolveMove({ ...stateRef.current, scopes: orderedScopes() }, direction);
       if (next) {
-        event.preventDefault();
-        applyFocus(next);
+        applyFocus(next, true);
         return;
       }
 
@@ -143,7 +208,6 @@ export const TvFocusProvider: React.FC<{ children: React.ReactNode }> = ({ child
             ? window.scrollY + window.innerHeight >= root.scrollHeight - 2
             : window.scrollY <= 2;
         if (!atEdge) {
-          event.preventDefault();
           window.scrollBy({
             top: (direction === 'down' ? 1 : -1) * window.innerHeight * 0.8,
             behavior: 'smooth',
@@ -157,8 +221,8 @@ export const TvFocusProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [applyFocus, orderedScopes]);
 
   const value = useMemo<TvFocusContextValue>(
-    () => ({ registerScope, registerItem, focus: applyFocus, focused }),
-    [registerScope, registerItem, applyFocus, focused],
+    () => ({ registerScope, registerItem, focus: applyFocus, isCurrent, focused }),
+    [registerScope, registerItem, applyFocus, isCurrent, focused],
   );
 
   return <TvFocusContext.Provider value={value}>{children}</TvFocusContext.Provider>;

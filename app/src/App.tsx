@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   StatusBar,
   Alert,
@@ -15,6 +15,7 @@ import { useAppUpdate } from './hooks/useAppUpdate';
 import { AddressProvider, useAddress } from './context/AddressContext';
 import { loadNetworkJournalPreference } from './services/networkJournal';
 import { DEV_SITE_URL } from './config';
+import { EDITION_AUTO_UPDATE, EDITION_UPDATE_MANIFEST_URL } from './edition';
 
 const { DnsModule } = NativeModules;
 
@@ -171,9 +172,20 @@ function AppShell({ dnsSettled }: { dnsSettled: boolean }) {
   // retombe sur la valeur codée en dur et la vérification de mise à jour échoue
   // en 404, avec un bandeau LogBox par-dessus l'interface. Proposer une mise à
   // jour d'APK n'a de toute façon aucun sens quand on teste un serveur local.
-  const updateSourceUrl = __DEV__ && DEV_SITE_URL ? null : config?.githubUrl ?? null;
+  const updateSourceUrl = __DEV__ && DEV_SITE_URL ? null : EDITION_UPDATE_MANIFEST_URL ?? config?.githubUrl ?? null;
   const { state, accept, dismiss, cancel, openSettings, retry } =
     useAppUpdate(updateSourceUrl);
+
+  // Édition à mise à jour automatique : la version trouvée au lancement se
+  // télécharge aussitôt, sans fenêtre. Une seule fois par lancement : après
+  // une annulation, on ne relance pas le téléchargement en boucle.
+  const autoStarted = useRef(false);
+  useEffect(() => {
+    if (!EDITION_AUTO_UPDATE || !dnsSettled || autoStarted.current) return;
+    if (state.stage !== 'offered' || !state.manifest) return;
+    autoStarted.current = true;
+    void accept();
+  }, [dnsSettled, state.stage, state.manifest, accept]);
 
   // No i18n in the mobile app today — FR is the primary language. The JSON
   // manifest still carries both `fr` and `en` release notes for future use.
@@ -205,7 +217,7 @@ function AppShell({ dnsSettled }: { dnsSettled: boolean }) {
   return (
     <>
       <BrowserScreen />
-      {dnsSettled && state.stage === 'offered' && state.manifest && (
+      {!EDITION_AUTO_UPDATE && dnsSettled && state.stage === 'offered' && state.manifest && (
         <UpdateDialog
           manifest={state.manifest}
           locale={locale}

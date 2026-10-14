@@ -9,6 +9,8 @@ export interface TvFocusContextValue {
   ) => () => void;
   registerItem: (scopeId: string, index: number, element: HTMLElement) => () => void;
   focus: (position: Position) => void;
+  /** Vrai si le moteur est déjà sur cette position, même pas encore affichée. */
+  isCurrent: (position: Position) => boolean;
   focused: Position | null;
 }
 

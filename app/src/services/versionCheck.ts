@@ -65,12 +65,17 @@ function isValidManifest(obj: unknown): obj is Manifest {
   );
 }
 
+/**
+ * `source` : l'adresse d'un dépôt GitHub (son `version.json` est lu), ou
+ * directement celle d'un manifeste `.json` (édition à adresse fixe).
+ */
 export async function fetchLatestVersion(
-  githubUrl: string,
+  source: string,
 ): Promise<VersionCheckResult> {
   let manifest: Manifest;
   try {
-    const manifestUrl = `${githubUrl}${UPDATE_CHECK.GITHUB_VERSION_RAW_PATH}?_=${Date.now()}`;
+    const base = source.endsWith('.json') ? source : `${source}${UPDATE_CHECK.GITHUB_VERSION_RAW_PATH}`;
+    const manifestUrl = `${base}?_=${Date.now()}`;
     const res = await fetchWithTimeout(manifestUrl, UPDATE_CHECK.TIMEOUT_MS);
     if (!res.ok) {
       console.warn('[versionCheck] manifest status', res.status);

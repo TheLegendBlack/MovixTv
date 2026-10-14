@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppState, type AppStateStatus, Platform } from 'react-native';
 
 import { UPDATE_CHECK } from '../config';
+import { EDITION_APP_NAME } from '../edition';
 import {
   canInstallApks,
   installApk,
@@ -567,7 +568,7 @@ export function useAppUpdate(githubUrl: string | null) {
 
     try {
       const fileName = fileNameForBuild(manifest.buildNumber);
-      const title = `Mise à jour Movix ${manifest.version}`;
+      const title = `Mise à jour ${EDITION_APP_NAME} ${manifest.version}`;
       const { downloadId, filePath } = await enqueueDownload(
         manifest.apkUrl,
         fileName,

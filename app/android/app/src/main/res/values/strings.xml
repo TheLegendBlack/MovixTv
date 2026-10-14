@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Movix</string>
+    <!-- app_name : défini par build.gradle (resValue), d'après edition.properties. -->
     <string name="pip_rewind_10">Reculer de 10 secondes</string>
     <string name="pip_play">Lecture</string>
     <string name="pip_pause">Pause</string>

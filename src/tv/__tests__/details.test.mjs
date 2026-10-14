@@ -3,6 +3,9 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 const read = path => readFile(new URL(`../../../${path}`, import.meta.url), 'utf8');
+// Le registre des rangées vit dans `rowRegistry.ts` depuis le 12/10/2026 ;
+// les tests qui lisaient `tmdb.ts` lisent les deux.
+const readTmdb = async () => `${await read('src/tv/data/tmdb.ts')}\n${await read('src/tv/data/rowRegistry.ts')}`;
 
 test('la fiche ne défile pas, elle glisse', async () => {
   const page = await read('src/tv/TvDetails.tsx');
@@ -234,7 +237,7 @@ test('la barre de navigation ne pousse pas la bannière', async () => {
 
 test('« Voir plus » n\'apparaît que sur les rangées réellement paginables', async () => {
   const [tmdb, home, row] = await Promise.all([
-    read('src/tv/data/tmdb.ts'),
+    readTmdb(),
     read('src/tv/TvBrowse.tsx'),
     read('src/tv/components/TvRow.tsx'),
   ]);
@@ -263,14 +266,15 @@ test('« Voir plus » n\'apparaît que sur les rangées réellement paginables',
 
 test('la collection interroge la même requête que la rangée', async () => {
   const [tmdb, page, app] = await Promise.all([
-    read('src/tv/data/tmdb.ts'),
+    readTmdb(),
     read('src/tv/TvCollection.tsx'),
     read('src/tv/TvApp.tsx'),
   ]);
 
   // Redéfinir des critères garantirait que « Voir plus » finisse par montrer
   // autre chose que la rangée qui y mène.
-  assert.match(tmdb, /const spec = ROWS\.find\(row => row\.id === rowId\);/);
+  // `findRowSpec` : la rangée du registre, ou la rangée sur mesure déclarée.
+  assert.match(tmdb, /const spec = findRowSpec\(rowId\);/);
   assert.match(tmdb, /fetchSpecPage\(spec, page, signal\)/);
   assert.match(tmdb, /fetchSpecPage\(spec, 1, signal\)/);
 
@@ -414,14 +418,14 @@ test('la transformation est une sortie puis une entrée, jamais un fondu croisé
 
 test('chaque page nomme des rangées qui existent vraiment', async () => {
   const [tmdb, browse, pageRows] = await Promise.all([
-    read('src/tv/data/tmdb.ts'),
+    readTmdb(),
     read('src/tv/TvBrowse.tsx'),
     read('src/tv/data/pages.ts'),
   ]);
-  // Depuis la personnalisation (10/2026), la rangée de bannière de chaque page
-  // est déclarée avec sa liste par défaut dans `TV_PAGES`.
+  // La rangée de bannière de chaque page est déclarée avec sa liste dans
+  // `TV_PAGES` : `page('Accueil', TV_HOME_ROWS, 'tendances')` (13/10/2026).
   const heroOf = name => {
-    const entry = pageRows.match(new RegExp(`defaults: ${name}, hero: '([^']+)'`));
+    const entry = pageRows.match(new RegExp(`, ${name}, '([^']+)'\\)`));
     return entry ? `heroRowId="${entry[1]}"` : '';
   };
 
@@ -500,4 +504,12 @@ test('la clé VIP amorce aussi l\'habilitation, pas seulement le code', async ()
   // Optimiste, jamais autoritaire : le contrôle serveur doit pouvoir retirer
   // ce que le bloc dev a posé, sinon une clé révoquée resterait VIP.
   assert.match(vip, /localStorage\.removeItem\('is_vip'\)/);
+});
+
+test('la barre pose le focus au lancement même si Chromium a focalisé la boîte qui défile', async () => {
+  // Edenwood, WebView 154, 14/10/2026 : au lancement, Chromium donne le focus
+  // au conteneur défilant ; pris pour un focus de la page, il laissait le
+  // moteur sans position et la première flèche était perdue.
+  const nav = await readFile(new URL('../components/TvTopNav.tsx', import.meta.url), 'utf8');
+  assert.match(nav, /active\.matches\('button, a\[href\], input, textarea, select, \[tabindex\]'\)/);
 });

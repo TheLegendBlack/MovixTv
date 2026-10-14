@@ -24,7 +24,9 @@ import { stillUrl } from './tmdb';
  * deviendrait fausse au premier changement de gabarit de carte.
  */
 
-const META_KEY = 'movix:tv:watch-meta';
+export const WATCH_META_KEY = 'movix:tv:watch-meta';
+/** Émis quand la progression change hors du lecteur : la rangée se relit. */
+export const PROGRESS_CHANGE_EVENT = 'movix-tv-progress';
 const MOVIE_KEY = /^progress_(\d+)$/;
 const EPISODE_KEY = /^progress_tv_(\d+)_s(\d+)_e(\d+)$/;
 
@@ -85,9 +87,9 @@ export function remainingLabel(seconds: number): string {
   return `Il reste ${hours} h ${String(minutes).padStart(2, '0')} min`;
 }
 
-function readMeta(): Record<string, WatchMeta> {
+export function readWatchMeta(): Record<string, WatchMeta> {
   try {
-    const raw = window.localStorage.getItem(META_KEY);
+    const raw = window.localStorage.getItem(WATCH_META_KEY);
     if (!raw) return {};
     const parsed: unknown = JSON.parse(raw);
     return parsed && typeof parsed === 'object' ? (parsed as Record<string, WatchMeta>) : {};
@@ -108,9 +110,9 @@ function readMeta(): Record<string, WatchMeta> {
  */
 export function rememberWatchMeta(storageKey: string, meta: WatchMeta): void {
   try {
-    const all = readMeta();
+    const all = readWatchMeta();
     all[storageKey] = meta;
-    window.localStorage.setItem(META_KEY, JSON.stringify(all));
+    window.localStorage.setItem(WATCH_META_KEY, JSON.stringify(all));
   } catch {
     // Stockage plein ou indisponible : la carte perdra son image et son titre,
     // ce qui la fera simplement disparaître de la rangée. Rien ici ne justifie
@@ -141,7 +143,7 @@ function parseKey(
 
 function read(): ContinueWatchingEntry[] {
   try {
-    const meta = readMeta();
+    const meta = readWatchMeta();
     const entries: ContinueWatchingEntry[] = [];
 
     for (let index = 0; index < window.localStorage.length; index += 1) {
@@ -212,9 +214,11 @@ export function useContinueWatching(): ContinueWatchingEntry[] {
     const refresh = () => setEntries(read());
     document.addEventListener('visibilitychange', refresh);
     window.addEventListener('focus', refresh);
+    window.addEventListener(PROGRESS_CHANGE_EVENT, refresh);
     return () => {
       document.removeEventListener('visibilitychange', refresh);
       window.removeEventListener('focus', refresh);
+      window.removeEventListener(PROGRESS_CHANGE_EVENT, refresh);
     };
   }, []);
 

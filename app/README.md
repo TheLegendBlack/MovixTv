@@ -89,111 +89,167 @@ Vérifications : `node --test tests/*.mjs`, `cd android && ./gradlew testDebugUn
 
 ## Portage en APK autonome
 
-Objectif : une application installée sur le téléviseur qui fonctionne sans le
-poste de développement, sans Metro ni ponts adb. **En l'état du code, c'est
-faisable directement**, sans nouveau développement natif : le build release
-embarque déjà le bundle JavaScript, le proxy, le bloqueur et la télécommande
-sont finis, et le site se construit en une commande. Il reste à décider où le
-site est servi, puis à configurer le shell en conséquence. La procédure, dans l'ordre :
+Objectif : **votre propre application**, installée sur le téléviseur et qui
+fonctionne seule, sans poste de développement, sans Metro ni ponts adb. Rien de
+natif à écrire : le build release embarque le shell (proxy média, bloqueur,
+télécommande, mise à jour), et tout ce qui distingue votre application tient
+dans deux fichiers d'**édition** (10/2026). Il reste à servir le site, puis à
+configurer, signer et construire. Comptez une heure la première fois.
+
+### 0. Prérequis
+
+- Node.js 20 ou plus récent, `npm install` fait à la racine **et** dans `app/` ;
+- JDK 21 (Gradle le cherche dans `~/.gradle/gradle.properties`,
+  `org.gradle.java.home=…`) et le SDK Android avec ses build-tools ;
+- un hébergement **HTTPS** pour le site (étape 2) ;
+- pour installer : soit `adb` (débogage USB ou réseau activé sur la TV), soit
+  l'application Downloader sur la TV (étape 8).
 
 ### 1. Construire le site
 
 ```bash
-cd ..            # racine du dépôt
-npm run build    # -> dist/
+npm run build    # à la racine du dépôt -> dist/
 ```
 
-Le build lit `.env` (`VITE_MAIN_API`, `VITE_PROXIES_EMBED_API`, `VITE_SITE_URL`, `VITE_TMDB_API_KEY`).
+Le build lit `.env` : `VITE_MAIN_API`, `VITE_PROXIES_EMBED_API`, `VITE_SITE_URL`.
+**Laissez vides `VITE_TMDB_API_KEY` et `VITE_DEV_ACCESS_CODE`** pour un build
+distribué : une clé mise dans le build est lisible par quiconque ouvre le site.
+Chaque utilisateur saisit ses clés sur sa TV, dans **Paramètres › Clé TMDB**
+(clé gratuite sur themoviedb.org) et **Paramètres › Clé VIP Movix** ; elles
+restent dans le stockage de sa WebView.
 
-### 2. La clé VIP arrive par les réglages
+### 2. Servir `dist/` en HTTPS
 
-`src/main.tsx` ne pose la clé (`VITE_DEV_ACCESS_CODE`) dans le stockage de la
-WebView **qu'en développement** ; un build de production ne l'embarque pas.
-Depuis 10/2026, l'interface TV a son écran de saisie : **Paramètres › Clé VIP
-Movix**, au clavier virtuel, qui écrit `localStorage['access_code']` et vérifie
-la clé auprès de l'API. La clé TMDB se saisit de même (**Paramètres › Clé
-TMDB**) et prime sur `VITE_TMDB_API_KEY`. Rien à embarquer dans le build.
+Le pont natif ne fait confiance qu'à une origine `https` en release. Le site a
+besoin d'un **repli SPA** (toute route inconnue renvoie `index.html`) :
+Cloudflare Pages (`_redirects` : `/* /index.html 200`), Netlify, GitHub Pages
+(copie d'`index.html` en `404.html`), ou un serveur à vous (nginx :
+`try_files $uri /index.html`).
 
-### 3. Servir `dist/` en HTTPS
+**L'API Movix filtre les origines** (`api.movix.men`, CORS) : tant que l'équipe
+Movix n'a pas ajouté votre domaine à sa liste, la clé VIP et les sources sont
+refusées depuis votre site (préflight 403, mesuré le 11/10/2026). Demandez-le
+avant de distribuer l'application.
 
-Le pont natif ne fait confiance qu'à une origine `https` en release : le site
-doit être servi en HTTPS, avec un repli SPA (toute route inconnue renvoie
-`index.html`, car le site utilise l'historique du navigateur). Toute solution
-d'hébergement statique convient : Cloudflare Pages (`_redirects` :
-`/* /index.html 200`), Netlify, GitHub Pages (avec la copie d'`index.html` en
-`404.html`), ou un serveur personnel (`try_files $uri /index.html` avec nginx).
-Le domaine peut être privé et obscur ; ce n'est ni movix.men ni movix.fun.
+### 3. Configurer l'édition du shell : `app/src/edition.ts`
 
-Embarquer `dist/` dans l'APK lui-même est possible mais n'est pas direct : il
-faudrait un petit serveur HTTP local dans le shell et l'ajout de son origine
-aux origines de confiance du pont. À envisager plus tard.
+| Constante | Rôle | Pour votre application |
+|---|---|---|
+| `EDITION_APP_NAME` | nom affiché sur l'écran de mise à jour | votre nom, par exemple `'Freedom'` |
+| `EDITION_SITE_URL` | site chargé par la WebView | `'https://votre-domaine'` (`null` chercherait le site Movix) |
+| `EDITION_UPDATE_MANIFEST_URL` | manifeste des mises à jour | `'https://votre-domaine/version.json'`, ou `''` pour ne jamais vérifier. **Pas `null`**, qui proposerait l'APK Movix par-dessus le vôtre |
+| `EDITION_AUTO_UPDATE` | `true` : la mise à jour se télécharge seule au lancement ; `false` : une fenêtre la propose | au choix |
+| `EDITION_LOGO` | logo de l'écran de mise à jour | `require('…/votre-icone.png')` |
 
-### 4. Pointer le shell vers cette adresse
+### 4. Identité Android : `app/android/app/edition.properties`
 
-Dans `src/services/addressResolver.ts`, le court-circuit de développement est
-gardé par `__DEV__` : en release, le shell interroge rentry et `address.json`
-du projet Movix, qui renverraient movix.men. Remplacer ce court-circuit par une
-adresse fixe :
+Ce fichier n'existe pas dans le dépôt ; sans lui, le build garde l'identité
+d'origine (`com.movix.app`, « Movix », version 2.6.5 / 42). Créez-le :
 
-```ts
-// resolveAddressConfig(), avant l'étape rentry
-return { ...HARDCODED_FALLBACK, primaryUrl: 'https://<votre-domaine>', mirrors: [] };
+```properties
+applicationId=tv.votre.app
+appName=Freedom
+versionCode=1
+versionName=1.0.0
+appIcon=@mipmap/ic_launcher_freedom
+appRoundIcon=@mipmap/ic_launcher_freedom_round
+appBanner=@drawable/banner_freedom
 ```
 
-et aligner `CONFIG.SITE_URL` et `FALLBACK_CONFIG.PRIMARY_URL` dans
-`src/config/index.ts`. Mettre `DEV_SITE_URL` à `null` n'est pas nécessaire :
-il est ignoré en release.
+- `applicationId` : un identifiant à vous, pour cohabiter avec Movix sur la
+  même TV. Il ne change plus ensuite : un autre identifiant est une autre
+  application.
+- `versionCode` : un entier à **augmenter à chaque publication** ; c'est lui que
+  l'application compare au manifeste pour se mettre à jour.
+- Icônes et bannière : déposez-les sous `app/android/app/src/edition/res/`
+  (`mipmap-mdpi` à `mipmap-xxxhdpi` pour l'icône, de 48 à 192 px de côté ;
+  `drawable/` pour la bannière du launcher Android TV, 320 × 180 px), puis
+  nommez-les dans le fichier ci-dessus. Sans ces trois lignes, les images Movix
+  restent.
 
-### 5. Neutraliser ou reprendre la mise à jour automatique
+### 5. Signer
 
-`src/App.tsx` vérifie `version.json` sur le dépôt GitHub de Movix
-(`FALLBACK_CONFIG.GITHUB_URL`) et proposerait d'installer l'APK amont
-par-dessus le vôtre. Soit forcer `updateSourceUrl = null`, soit publier votre
-propre `version.json` et votre APK (le script `npm run app:publish` à la racine
-fait le build release, calcule la somme SHA-256 et écrit le manifeste ; adapter
-`APK_URL` dans `scripts/publish-app.mjs` et `GITHUB_URL` dans la config).
-
-### 6. Identité et version
-
-- Nom affiché : `app_name` dans `android/app/src/main/res/values/strings.xml` et `CONFIG.APP_NAME` (par exemple « Freedom »).
-- Identifiant : `applicationId` dans `android/app/build.gradle` (`com.movix.app`). Le changer permet de cohabiter avec l'application Movix officielle ; le garder permet d'installer par-dessus le build de développement actuel.
-- Version : `versionCode` et `versionName` dans le même fichier.
-
-### 7. Signer
-
-Sans clé, Gradle signe la release avec la clé de débogage de la machine, ce qui
-suffit pour une seule télévision mais lie les mises à jour futures à ce poste.
-Pour une clé pérenne :
+Sans clé, Gradle signe la release avec la clé de débogage de votre machine :
+les mises à jour ne passeraient plus si vous changez de poste. Créez une clé
+pérenne :
 
 ```bash
-keytool -genkeypair -v -keystore ~/movix-tv-release.jks -alias movixtv -keyalg RSA -keysize 2048 -validity 10000
+keytool -genkeypair -v -keystore ~/freedom-release.jks -alias freedom -keyalg RSA -keysize 2048 -validity 10000
 ```
 
-puis `android/app/keystore.properties` (gitignoré, ne jamais le committer) :
+puis `app/android/app/keystore.properties` (gitignoré, ne jamais le committer) :
 
-```
-MOVIX_RELEASE_STORE_FILE=/Users/<vous>/movix-tv-release.jks
+```properties
+MOVIX_RELEASE_STORE_FILE=/Users/<vous>/freedom-release.jks
 MOVIX_RELEASE_STORE_PASSWORD=…
-MOVIX_RELEASE_KEY_ALIAS=movixtv
+MOVIX_RELEASE_KEY_ALIAS=freedom
 MOVIX_RELEASE_KEY_PASSWORD=…
 ```
 
-Changer de signature impose de désinstaller l'application en place
-(`adb uninstall com.movix.app`), ce qui efface le stockage de la WebView :
-progression de lecture, liste et clé VIP. À faire une fois, en connaissance de cause.
+**Sauvegardez la clé et ses mots de passe hors de la machine.** Perdue, plus
+aucune mise à jour ne s'installera : Android refuse un APK signé autrement, et
+changer de clé impose de désinstaller, ce qui efface le stockage de la WebView
+(clés, progression, réglages).
 
-### 8. Construire et installer
+### 6. Construire
 
 ```bash
 cd app && npm run build:userscript
 cd android && ./gradlew assembleRelease
-adb install -r app/build/outputs/apk/release/app-release.apk
+# -> app/android/app/build/outputs/apk/release/app-release.apk
 ```
 
-Puis, PC éteint : lancer l'application depuis le launcher de la TV, vérifier
-que l'accueil se charge depuis votre adresse, qu'un titre se lit (la clé VIP
-est donc bien en place), que la télécommande et les touches média répondent,
-et que la bascule du bloqueur est visible dans les réglages.
+L'APK release n'emporte que les variantes ARM (`armeabi-v7a`, `arm64-v8a`) :
+celles des téléviseurs et boîtiers Android, environ 38 Mo. Le build debug garde
+aussi x86 pour les émulateurs.
+
+### 7. Publier les mises à jour
+
+L'application lit au lancement le manifeste donné par
+`EDITION_UPDATE_MANIFEST_URL` et propose l'APK s'il porte un `buildNumber` plus
+grand que le sien ; elle vérifie l'empreinte SHA-256 avant d'installer. La
+commande à la racine prépare les deux fichiers :
+
+```bash
+MOVIX_APK_URL=https://votre-domaine/freedom.apk node scripts/publish-app.mjs
+```
+
+Elle exige `keystore.properties`, lit la version dans `edition.properties`,
+demande les notes de version, construit, puis écrit `app/version.json` et
+`app/movix-android.apk`. Servez-les aux adresses annoncées (le JSON à celle de
+`EDITION_UPDATE_MANIFEST_URL`, l'APK à `MOVIX_APK_URL`, en HTTPS). Forme du
+manifeste :
+
+```json
+{
+  "version": "1.0.1",
+  "buildNumber": 2,
+  "apkUrl": "https://votre-domaine/freedom.apk",
+  "apkSizeBytes": 39958311,
+  "apkSha256": "<64 caractères hexadécimaux>",
+  "mandatory": false,
+  "releasedAt": "2026-10-14T12:00:00.000Z",
+  "releaseNotes": { "fr": "Ce qui change.", "en": "What changed." }
+}
+```
+
+### 8. Installer sur la TV
+
+- **Par adb** : `adb install -r app/android/app/build/outputs/apk/release/app-release.apk`.
+- **Sans PC** : servez l'APK en HTTPS, installez « Downloader » (AFTVnews) depuis
+  le Play Store de la TV et tapez son adresse. Android demande alors, dans
+  l'ordre : d'autoriser Downloader à installer des applications (« Paramètres »,
+  activer Downloader, Retour), « Installer », puis, la première fois, **Google
+  Play Protect** bloque une application qu'il ne connaît pas : « Plus de
+  détails », puis « Installer quand même ». À la première ouverture, l'application
+  propose le DNS Cloudflare puis Android demande la connexion VPN qui
+  l'applique (voir plus bas).
+
+Vérifiez ensuite, PC éteint : l'accueil se charge depuis votre adresse (après
+saisie de la clé TMDB), un titre se lit (la clé VIP est en place), la
+télécommande et les touches média répondent, la bascule du bloqueur est visible
+dans les réglages.
+
 
 ## DNS Cloudflare
 

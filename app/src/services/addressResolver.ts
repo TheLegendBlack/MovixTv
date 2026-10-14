@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { UPDATE_CHECK, FALLBACK_CONFIG } from '../config';
 import { DEV_SITE_URL } from '../config';
+import { EDITION_SITE_URL } from '../edition';
 
 export type AddressConfig = {
   primaryUrl: string;
@@ -176,6 +177,11 @@ export async function resolveAddressConfig(): Promise<AddressConfig> {
   // garantit qu'un build release ne peut pas partir sur un localhost.
   if (__DEV__ && DEV_SITE_URL) {
     return { ...HARDCODED_FALLBACK, primaryUrl: DEV_SITE_URL, mirrors: [] };
+  }
+
+  // Édition à adresse fixe (`edition.ts`) : ni rentry ni address.json, ni miroirs.
+  if (EDITION_SITE_URL) {
+    return { ...HARDCODED_FALLBACK, primaryUrl: EDITION_SITE_URL, mirrors: [] };
   }
 
   // Derrière un VPN, rentry ou le résolveur peuvent renvoyer un défi

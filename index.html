@@ -40,11 +40,10 @@
              un cache immuable, et seulement quand on y va. -->
 
         <!-- Icons -->
-        <link rel="icon" href="/movix.png" />
-        <link rel="icon" type="image/png" href="/movix.png" sizes="96x96" />
-        <link rel="icon" type="image/svg+xml" href="/movix.png" />
-        <link rel="shortcut icon" href="/movix.png" />
-        <link rel="apple-touch-icon" sizes="180x180" href="/movix.png" />
+        <!-- Une seule icône, petite : la WebView de la télé téléchargeait et
+             décodait les cinq déclarations, toutes vers movix.png (751 Ko,
+             1024 px), à chaque lancement (mesuré le 14/10/2026 sur l'Edenwood). -->
+        <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png" />
 
         <title data-rh="true">
             Movix — Films et séries en streaming gratuit | VF, VOSTFR, HD
@@ -349,11 +348,8 @@
                 );
             })();
         </script>
-        <script
-            src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
-            async
-            defer
-        ></script>
+        <!-- Turnstile : chargé à la demande par TurnstileWidget, seulement quand
+             une source de lecture le demande, plus à chaque démarrage. -->
         <script type="module" src="/src/main.tsx"></script>
         <!-- Analytics : le snippet gtag codé en dur ici a été remplacé par
              `src/utils/analytics.ts`, appelé depuis `main.tsx`. Le fournisseur
@@ -363,18 +359,8 @@
     <body>
         <div id="root"></div>
 
-        <script>
-            // Cache-bust the Cast SDK URL on every page load so a stale SDK never
-            // sticks around in the browser/SW cache (defensive — gstatic already
-            // sets sane Cache-Control, but cinepulse does this too).
-            (function loadCastSender() {
-                var s = document.createElement("script");
-                s.type = "text/javascript";
-                s.src =
-                    "https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1&cb=" +
-                    Date.now();
-                document.body.appendChild(s);
-            })();
-        </script>
+        <!-- SDK Google Cast retiré (14/10/2026) : Chromecast n'existe plus dans
+             cette version TV, et la WebView ne sait pas s'en servir. Il était
+             téléchargé et exécuté à chaque démarrage. -->
     </body>
 </html>

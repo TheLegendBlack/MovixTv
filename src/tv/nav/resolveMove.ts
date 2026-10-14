@@ -54,8 +54,8 @@ export interface Scope {
    * - `null`  : sortie fermée, la flèche ne mène nulle part
    */
   neighbors?: {
-    left?: string;
-    right?: string;
+    left?: string | null;
+    right?: string | null;
     up?: string | null;
     down?: string | null;
   };

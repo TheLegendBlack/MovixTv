@@ -33,6 +33,22 @@ interface TurnstileWidgetProps {
   forceChallenge?: boolean;
 }
 
+const TURNSTILE_SCRIPT = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+
+/**
+ * Charge le script de Turnstile la première fois qu'un widget en a besoin.
+ * Il était déclaré dans index.html, donc téléchargé et exécuté à chaque
+ * démarrage de la télé, pour un widget que peu de sources affichent
+ * (14/10/2026).
+ */
+function ensureTurnstileScript(): void {
+  if (typeof document === 'undefined' || document.querySelector(`script[src="${TURNSTILE_SCRIPT}"]`)) return;
+  const script = document.createElement('script');
+  script.src = TURNSTILE_SCRIPT;
+  script.async = true;
+  document.head.appendChild(script);
+}
+
 const TurnstileWidget: React.FC<TurnstileWidgetProps> = ({
   onTokenChange,
   onVerify,
@@ -89,6 +105,7 @@ const TurnstileWidget: React.FC<TurnstileWidgetProps> = ({
     if (window.turnstile) {
       renderWidget();
     } else {
+      ensureTurnstileScript();
       const interval = window.setInterval(() => {
         if (window.turnstile) {
           window.clearInterval(interval);

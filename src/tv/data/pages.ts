@@ -1,7 +1,8 @@
-import { TV_ANIME_ROWS, TV_HOME_ROWS, TV_MOVIE_ROWS, TV_SERIES_ROWS } from './tmdb';
+import { TV_ANIME_ROWS, TV_HOME_ROWS, TV_MOVIE_ROWS, TV_SERIES_ROWS, TV_SHOWN_BY_DEFAULT } from './rowRegistry';
 
 /**
- * Les quatre pages de parcours et leurs rangées par défaut.
+ * Les quatre pages de parcours, leurs rangées disponibles et celles affichées
+ * d'office.
  *
  * Les pages lisent leurs rangées par `usePageRows` (`tv/edition.tsx`), qui
  * part de ces valeurs par défaut.
@@ -11,16 +12,25 @@ export type TvPageId = 'home' | 'movies' | 'series' | 'animes';
 
 export interface TvPageDefinition {
   label: string;
+  /** Rangées affichées d'office, dans l'ordre. */
   defaults: readonly string[];
+  /**
+   * Rangées que la page propose : celles affichées d'office, puis les suivantes.
+   */
+  available: readonly string[];
   /** Rangée qui alimente la bannière, si elle est affichée. */
   hero: string;
 }
 
+function page(label: string, rows: readonly string[], hero: string): TvPageDefinition {
+  return { label, defaults: rows.slice(0, TV_SHOWN_BY_DEFAULT), available: rows, hero };
+}
+
 export const TV_PAGES: Record<TvPageId, TvPageDefinition> = {
-  home: { label: 'Accueil', defaults: TV_HOME_ROWS, hero: 'tendances' },
-  movies: { label: 'Films', defaults: TV_MOVIE_ROWS, hero: 'films-selection' },
-  series: { label: 'Séries', defaults: TV_SERIES_ROWS, hero: 'series-selection' },
-  animes: { label: 'Animés', defaults: TV_ANIME_ROWS, hero: 'animes-en-cours' },
+  home: page('Accueil', TV_HOME_ROWS, 'tendances'),
+  movies: page('Films', TV_MOVIE_ROWS, 'films-selection'),
+  series: page('Séries', TV_SERIES_ROWS, 'series-selection'),
+  animes: page('Animés', TV_ANIME_ROWS, 'animes-en-cours'),
 };
 
 export const TV_PAGE_IDS = Object.keys(TV_PAGES) as TvPageId[];

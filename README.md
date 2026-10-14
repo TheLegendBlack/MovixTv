@@ -291,13 +291,16 @@ Les réglages de l'interface TV affichent le viewport, l'échelle et le palier m
 
 ## Portage en APK autonome
 
-L'objectif final est une application installée sur le téléviseur qui tourne sans le poste de développement. **C'est faisable en l'état, sans nouveau développement natif** : le build release embarque le code du shell, et le site se construit en une commande. Il reste trois étapes :
+Vous pouvez construire **votre propre application** : installée sur le téléviseur, elle tourne seule, sans poste de développement. Aucun développement natif n'est nécessaire, et tout ce qui la distingue tient dans deux fichiers d'édition :
 
-1. construire le site (`npm run build`) et le servir en **HTTPS** avec repli SPA, sur un domaine à soi. L'API Movix n'accepte que les origines de sa liste : faire ajouter ce domaine par l'équipe Movix, sinon la clé VIP et les sources sont refusées ;
-2. la clé VIP et la clé TMDB se saisissent déjà dans les réglages TV : rien à embarquer dans le build ;
-3. pointer le shell vers cette adresse, neutraliser la mise à jour automatique qui vise le dépôt Movix, fixer le nom et la version, signer, construire `assembleRelease`, installer.
+1. construire le site (`npm run build`, sans clé dans `.env` : chacun saisit les siennes dans les réglages de la TV) et le servir en **HTTPS** avec repli SPA, sur votre domaine. L'API Movix n'accepte que les origines de sa liste : faites ajouter ce domaine par l'équipe Movix, sinon la clé VIP et les sources sont refusées ;
+2. dans `app/src/edition.ts` : nom, adresse du site, manifeste de mise à jour (`''` pour n'en vérifier aucune, pas `null`, qui proposerait l'APK Movix) ;
+3. créer `app/android/app/edition.properties` : identifiant Android, nom, version, icône et bannière ;
+4. créer une clé de signature (`keystore.properties`) et la sauvegarder : perdue, plus aucune mise à jour ne s'installe ;
+5. `./gradlew assembleRelease` (environ 38 Mo, variantes ARM des téléviseurs), puis installer par adb ou par l'application Downloader ;
+6. publier les mises à jour : `MOVIX_APK_URL=… node scripts/publish-app.mjs` écrit `version.json` et l'APK à servir.
 
-La procédure détaillée, avec les fichiers à modifier, est dans [app/README.md](app/README.md#portage-en-apk-autonome).
+La procédure détaillée, fichier par fichier et écran par écran, est dans [app/README.md](app/README.md#portage-en-apk-autonome).
 
 ## Structure du dépôt
 
