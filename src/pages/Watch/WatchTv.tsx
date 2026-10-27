@@ -15,6 +15,7 @@ import { openInNewTab } from '../../utils/openInNewTab';
 import { extractM3u8FromEmbed, extractUqloadFile, extractVidzyM3u8, extractFsvidM3u8, registerServerResolvedSources, type M3u8Result } from '../../utils/extractM3u8';
 import type { SeekStreamingHlsSource } from '../../utils/seekStreamingCandidates';
 import { runExtractionPass } from '../../utils/runExtractionPass';
+import { animeSamaLanguageLabel, animeSamaProgressKey, findAnimeSamaEpisode, mergeEpisodeProgress } from '../../utils/animeSamaSource';
 import { pickAutoSelectedSource, sortHostersByPriority, type SourceAvailability } from '../../utils/sourceAutoSelect';
 import { getSourcePriorityPrefs, buildDefaults, subscribeToPriorityChanges } from '../../utils/sourcePriorityPrefs';
 import { detectHoster } from '../../utils/hosterRegistry';
@@ -51,6 +52,11 @@ import { getTmdbApiKey } from '@/config/tmdbKey';
 import { readLocalStorage, writeLocalStorage } from '../../utils/browserStorage';
 const MAIN_API = import.meta.env.VITE_MAIN_API;
 const TMDB_API_KEY = getTmdbApiKey();
+
+/** Au-delà, la recherche Anime-Sama est abandonnée : les autres sources n'attendent pas. */
+const ANIME_SAMA_TIMEOUT_MS = 12000;
+/** Fichier hébergé par Anime-Sama même (mp4 direct), et non un lecteur à extraire. */
+const ANIME_SAMA_FILE = /anime-sama\.[a-z]+\/videos\/.+\.mp4(?:\?|$)/i;
 
 // Voir le commentaire jumeau dans HLSPlayer.tsx : on normalise l'hôte de la
 // PAGE embed uqload (les TLD changent, l'extracteur ne connaît que
@@ -1318,6 +1324,22 @@ const WatchTv: React.FC = () => {
           }
         })();
 
+        // Anime-Sama : lecteurs de l'épisode quand l'œuvre est un animé (liste
+        // vide sinon). Bornée : une recherche lente côté Movix ne doit pas
+        // retenir les autres sources, attendues ensemble plus bas.
+        const animeSamaPromise = (async () => {
+          const controller = new AbortController();
+          const timer = window.setTimeout(() => controller.abort(), ANIME_SAMA_TIMEOUT_MS);
+          try {
+            return await findAnimeSamaEpisode(show, seasonNumber, episodeNumber, controller.signal);
+          } catch (error) {
+            console.error('Error checking Anime-Sama:', error);
+            return null;
+          } finally {
+            window.clearTimeout(timer);
+          }
+        })();
+
         const frembedAvailabilityPromise = (async () => {
           try {
             return await checkFrembedAvailability(id!, seasonNumber, episodeNumber);
@@ -1482,6 +1504,7 @@ const WatchTv: React.FC = () => {
           j1fResult,
           swiftflowResult,
           kisskhResult,
+          animeSamaEpisode,
         ] = await Promise.all([
           darkinoPromise,
           customLinksPromise,
@@ -1496,6 +1519,7 @@ const WatchTv: React.FC = () => {
           j1fPromise,
           swiftflowPromise,
           kisskhPromise,
+          animeSamaPromise,
         ]);
 
         // ========== TRAITEMENT DES RÉSULTATS SWIFTFLUX ==========
@@ -1576,7 +1600,23 @@ const WatchTv: React.FC = () => {
         // ========== TRAITEMENT DES RÉSULTATS DES LIENS CUSTOMS ==========
         setCustomSources(customLinksResult.customLinks || []);
 
+        const animeSamaPlayers = animeSamaEpisode?.players ?? [];
+        // Un épisode, une seule progression : celle du même épisode lu dans le
+        // découpage Anime-Sama rejoint la clé TMDB avant que le lecteur ne la
+        // lise. On reprend où l'on en était, sans seconde carte « Reprendre ».
+        if (animeSamaEpisode && id) {
+          mergeEpisodeProgress(
+            animeSamaProgressKey(id, animeSamaEpisode.entry + 1, animeSamaEpisode.index + 1),
+            `progress_tv_${id}_s${seasonNumber}_e${episodeNumber}`,
+          );
+        }
+
         const fetchedMp4Sources: { url: string; label?: string; language?: string; isVip?: boolean }[] = customLinksResult.mp4Links || [];
+        // Les fichiers hébergés par Anime-Sama lui-même sont des mp4 directs.
+        for (const player of animeSamaPlayers.filter(entry => ANIME_SAMA_FILE.test(entry.url))) {
+          const language = animeSamaLanguageLabel(player.language);
+          fetchedMp4Sources.push({ url: player.url, label: `Anime-Sama ${language}`, language });
+        }
         setMp4Sources(fetchedMp4Sources);
 
         // ========== TRAITEMENT DES RÉSULTATS DE FREMBED ==========
@@ -1723,6 +1763,23 @@ const WatchTv: React.FC = () => {
           );
           finalHlsSources = [...finalHlsSources, ...customPass.hls];
           finalFileSources = [...finalFileSources, ...customPass.file];
+        }
+
+        // Anime-Sama : passe d'extraction de la catégorie Animes. Les lecteurs
+        // jouables sur la TV sont ceux d'ansembed, que le userscript résout en
+        // Vidmoly (mesuré le 15/10/2026) ; les autres restent hors périmètre.
+        const animeSamaEmbeds = animeSamaPlayers.filter(entry => !ANIME_SAMA_FILE.test(entry.url));
+        if (animeSamaEmbeds.length > 0) {
+          const animeSamaPass = await runExtractionPass(
+            animeSamaEmbeds.map(entry => ({ url: entry.url, language: animeSamaLanguageLabel(entry.language), meta: { animeSama: true } })),
+            MAIN_API,
+            {
+              origin: 'anime-sama',
+              context: { category: 'anime', topLevel: 'custom' },
+            },
+          );
+          finalHlsSources = [...finalHlsSources, ...animeSamaPass.hls];
+          finalFileSources = [...finalFileSources, ...animeSamaPass.file];
         }
 
         // Process Coflix MULTI links — passe d'extraction générique (ignore Omega)

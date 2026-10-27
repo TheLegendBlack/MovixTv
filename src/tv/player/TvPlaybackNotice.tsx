@@ -15,7 +15,11 @@ export const TvPlaybackNotice: React.FC<{ issue: TvPlaybackIssue | null }> = ({ 
     <div className="pointer-events-none absolute inset-x-0 top-0 z-50 flex justify-center px-[5%] pt-[4%]">
       <div className="max-w-[720px] rounded-xl border-2 border-amber-400/50 bg-black/85 px-6 py-4">
         <p className="text-lg font-semibold leading-snug text-amber-300">
-          {issue.code === 'audio-codec' ? 'Son indisponible' : 'Lecture impossible'}
+          {issue.code === 'audio-codec'
+            ? 'Son indisponible'
+            : issue.code === 'interrupted'
+              ? 'Lecture interrompue'
+              : 'Lecture impossible'}
         </p>
         <p className="mt-1 text-base leading-relaxed text-white/80">{issue.message}</p>
       </div>

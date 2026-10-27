@@ -19,12 +19,19 @@ import { TV_SAFE_X } from '../components/TvRow';
 
 export const BACK_SCOPE = 'reglages-retour';
 
-/** Pose le focus sur un élément au montage, si rien d'autre ne l'a pris. */
+/**
+ * Pose le focus sur un élément au montage, si aucun contrôle ne l'a pris.
+ *
+ * Seul un contrôle compte : Chromium focalise aussi la boîte qui défile, et la
+ * prendre pour un focus posé laissait l'écran sans focus, la première flèche
+ * partant sur Retour (écran « Se connecter avec Movix », Edenwood, 26/10/2026 ;
+ * même piège que `TvTopNav` le 14/10).
+ */
 export function useInitialFocus(scopeId: string, index = 0): void {
   const { focus } = useTvFocusContext();
   useEffect(() => {
     const active = document.activeElement;
-    if (active && active !== document.body) return;
+    if (active && active !== document.body && active.matches('button, a[href], input, textarea, select, [tabindex]')) return;
     focus({ scopeId, index });
     // Au montage seulement.
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -5,6 +5,7 @@ import appMetadata from '../../app.json';
 type UpdateModuleType = {
   getVersionCode(): Promise<number>;
   getVersionName(): Promise<string>;
+  getSupportedAbis(): Promise<string[]>;
   canInstallApks(): Promise<boolean>;
   openInstallSettings(): Promise<void>;
   installApk(filePath: string): Promise<void>;
@@ -70,4 +71,20 @@ export async function openInstallSettings(): Promise<void> {
 export async function installApk(filePath: string): Promise<void> {
   if (Platform.OS !== 'android') throw unsupportedPlatform('installApk');
   return ensureModule().installApk(filePath);
+}
+
+/**
+ * Processeurs de l'appareil, du préféré au moins bon. Vide hors Android ou si le
+ * module natif est plus ancien que ce code (shell non reconstruit) : l'appelant
+ * garde alors l'APK universel.
+ */
+export async function getSupportedAbis(): Promise<string[]> {
+  if (Platform.OS !== 'android') return [];
+  try {
+    const abis = await ensureModule().getSupportedAbis();
+    return Array.isArray(abis) ? abis : [];
+  } catch (err) {
+    console.warn('[apkInstaller] getSupportedAbis failed', err);
+    return [];
+  }
 }

@@ -44,11 +44,12 @@ internal fun decodedCronetResponseHeaders(headers: Map<String, String>): Map<Str
  * Upstream du proxy media qui fetch via **Cronet** (le moteur reseau de
  * Chromium, charge depuis Google Play Services).
  *
- * Pourquoi : les CDN fsvid/vidzy filtrent la signature TLS/ClientHello du
- * client. okhttp est reconnu comme un scraper Android et bloque -> le CDN
- * renvoie 403 (vidzy) ou un flux leurre de ~18 s (fsvid). Cronet emet le meme
- * ClientHello que Chrome, donc le CDN sert le vrai flux, exactement comme dans
- * le navigateur avec l'extension.
+ * Uqload utilise [fallback] : son profil exige le token zstd dans
+ * Accept-Encoding. Cronet controle cet en-tete et ignore addHeader ;
+ * activer Brotli seul ne suffit donc pas. OkHttp permet de le fixer tout en
+ * demandant identity pour conserver les octets des playlists et des Range.
+ * Fsvid/Vidzy restent sur Cronet : leur CDN exige le TLS de Chrome
+ * (voir [MediaProxyPolicy.requiresOkHttpUpstream]).
  *
  * Cronet est asynchrone (callbacks) alors que [MediaProxyUpstream.execute] est
  * synchrone et rend un flux. Le pont est fait par [CronetResponseBody] : le
@@ -113,6 +114,9 @@ internal class CronetMediaProxyUpstream(
     ): MediaProxyUpstreamResponse {
         if (MediaProxyPolicy.isProviderDecoyUrl(target.upstreamUrl)) {
             throw IllegalStateException("Upstream returned a decoy stream")
+        }
+        if (MediaProxyPolicy.requiresOkHttpUpstream(target.upstreamUrl)) {
+            return fallback.execute(target, localRequestHeaders)
         }
         val activeEngine = cronetEngine()
             ?: return fallback.execute(target, localRequestHeaders)

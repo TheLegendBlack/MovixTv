@@ -29,6 +29,8 @@ export const WATCH_META_KEY = 'movix:tv:watch-meta';
 export const PROGRESS_CHANGE_EVENT = 'movix-tv-progress';
 const MOVIE_KEY = /^progress_(\d+)$/;
 const EPISODE_KEY = /^progress_tv_(\d+)_s(\d+)_e(\d+)$/;
+/** Épisode lu dans le découpage Anime-Sama (`animeSamaProgressKey`) : entrée et épisode, pas saison TMDB. */
+const ANIME_SAMA_KEY = /^progress_as_(\d+)_(\d+)_(\d+)$/;
 
 const MAX_ENTRIES = 12;
 /** Au-delà, le titre est considéré comme terminé. Personne ne reprend un générique. */
@@ -125,6 +127,7 @@ function parseKey(
 ): (Pick<ContinueWatchingEntry, 'id' | 'mediaType'> & {
   season?: number;
   episode?: number;
+  animeSama?: boolean;
 }) | null {
   const movie = MOVIE_KEY.exec(key);
   if (movie) return { id: Number(movie[1]), mediaType: 'movie' };
@@ -138,6 +141,9 @@ function parseKey(
       episode: Number(episode[3]),
     };
   }
+
+  const animeSama = ANIME_SAMA_KEY.exec(key);
+  if (animeSama) return { id: Number(animeSama[1]), mediaType: 'tv', animeSama: true };
   return null;
 }
 
@@ -174,8 +180,11 @@ function read(): ContinueWatchingEntry[] {
       const entryMeta = meta[key];
       if (!entryMeta?.title) continue;
 
-      const episodeLabel =
-        parsed.mediaType === 'tv' && parsed.season !== undefined
+      // Anime-Sama : le lecteur a noté l'entrée et l'épisode dans `episodeName`
+      // (« Saison 2 Partie 1 · Épisode 3 ») ; « S2:E3 » y serait trompeur.
+      const episodeLabel = parsed.animeSama
+        ? `Anime-Sama${entryMeta.episodeName ? ` · ${entryMeta.episodeName}` : ''}`
+        : parsed.mediaType === 'tv' && parsed.season !== undefined
           ? `S${parsed.season}:E${parsed.episode}` +
             (entryMeta.episodeName ? ` · ${entryMeta.episodeName}` : '')
           : undefined;

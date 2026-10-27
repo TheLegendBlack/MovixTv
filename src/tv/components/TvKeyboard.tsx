@@ -67,7 +67,8 @@ export interface TvKeyboardProps {
   onClear: () => void;
   /**
    * Touches ajoutées après les chiffres, pour une saisie qui en a besoin — le
-   * tiret des clés VIP (`VIP-XXXX`). Absent de la recherche.
+   * tiret et les quelques signes des clés VIP (`TvKeyEntry`). Absent de la
+   * recherche et de la clé TMDB.
    */
   extraKeys?: readonly string[];
   /** Masque la touche Espace : inutile pour une clé, et source d'erreurs. */

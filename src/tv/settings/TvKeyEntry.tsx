@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { TvKeyboard, TV_KEYBOARD_WIDTH, tvKeyboardScopes } from '../components/TvKeyboard';
 import { BACK_SCOPE, TvChoice, TvIcon, TvStatusDot, TvSubpage, maskKey, useInitialFocus, type TvIconName } from './kit';
 import { useFocusScope } from '../nav/hooks';
@@ -19,6 +19,15 @@ import { getStoredTmdbKey, setStoredTmdbKey, validateTmdbKey } from '@/config/tm
 
 type KeyKind = 'vip' | 'tmdb';
 
+/**
+ * Touches ajoutées au clavier pour la clé VIP, et pour elle seule : le tiret,
+ * « ! », « ? » (un utilisateur ne pouvait pas saisir la sienne, 15/10/2026),
+ * « @ » et « & » par précaution. Une clé VIP n'a pas de forme imposée : toutes
+ * ne commencent pas par `VIP-` (l'éditeur de Movix, 15/10/2026). Elle est
+ * gardée en majuscules, et c'est Movix qui dit si elle est valable.
+ */
+const VIP_EXTRA_KEYS = ['-', '!', '?', '@', '&'] as const;
+
 /*
  * Budget vertical (viewport de 540 px). Clavier : rangée d'actions 32 + 4,
  * puis touches de 32 sur six colonnes — six rangées pour TMDB (248 px), sept
@@ -33,8 +42,8 @@ const TMDB_LENGTH = 32;
 const COPY: Record<KeyKind, { title: string; subtitle: string; placeholder: string }> = {
   vip: {
     title: 'Clé VIP Movix',
-    subtitle: 'Donne accès aux sources de lecture résolues par Movix. Elle a la forme VIP-XXXXXXXXXXXX.',
-    placeholder: 'VIP-…',
+    subtitle: 'Donne accès aux sources de lecture résolues par Movix. Saisissez-la telle que Movix vous l’a donnée.',
+    placeholder: 'Votre clé VIP',
   },
   tmdb: {
     title: 'Clé TMDB',
@@ -54,10 +63,7 @@ function formatNote(kind: KeyKind, value: string): { tone: 'ok' | 'warn'; text: 
     if (key.length > TMDB_LENGTH) return { tone: 'warn', text: `${key.length - TMDB_LENGTH} caractère${key.length - TMDB_LENGTH > 1 ? 's' : ''} de trop.` };
     return { tone: 'ok', text: 'Longueur correcte : prête à être vérifiée.' };
   }
-  const key = value.toUpperCase();
-  if (!'VIP-'.startsWith(key.slice(0, 4)) || (key.length >= 4 && !key.startsWith('VIP-'))) {
-    return { tone: 'warn', text: 'Une clé VIP commence par « VIP- ».' };
-  }
+  // Clé VIP : aucune forme imposée, Movix seul la juge à l'enregistrement.
   return null;
 }
 
@@ -71,6 +77,7 @@ const TvKeyEntry: React.FC = () => {
   const { kind: rawKind } = useParams<{ kind: string }>();
   const kind: KeyKind = rawKind === 'tmdb' ? 'tmdb' : 'vip';
   const copy = COPY[kind];
+  const navigate = useNavigate();
 
   const [value, setValue] = useState('');
   const [status, setStatus] = useState<{ tone: 'info' | 'ok' | 'error'; text: string } | null>(null);
@@ -133,6 +140,17 @@ const TvKeyEntry: React.FC = () => {
   };
 
   const actions: { label: string; hint: string; icon: TvIconName; onSelect: () => void }[] = [
+    // Sans rien taper : la clé du compte Movix, par un code confirmé au
+    // téléphone (26/10/2026). Budget vertical : une tuile de plus (52 px) sur
+    // les 84 px de marge du pire cas.
+    ...(kind === 'vip'
+      ? [{
+          label: 'Se connecter avec Movix',
+          hint: 'Récupérer la clé de votre compte par QR code',
+          icon: 'link' as const,
+          onSelect: () => navigate('/tvapp/settings/movix'),
+        }]
+      : []),
     {
       label: busy ? 'Vérification…' : 'Enregistrer',
       hint: 'Vérifier puis garder cette clé',
@@ -170,7 +188,7 @@ const TvKeyEntry: React.FC = () => {
             idPrefix="cle"
             rightNeighbor={ACTIONS_SCOPE}
             downNeighbor={null}
-            extraKeys={kind === 'vip' ? ['-'] : undefined}
+            extraKeys={kind === 'vip' ? VIP_EXTRA_KEYS : undefined}
             hideSpace
             onAppend={append}
             onBackspace={backspace}

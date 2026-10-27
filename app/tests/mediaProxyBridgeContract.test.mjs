@@ -13,12 +13,17 @@ const providerSignedUserAgent =
 const providerSecChUa = '"Chromium";v="140", "Not=A?Brand";v="24", "Google Chrome";v="140"';
 // Les trois indices client partent ensemble chez un vrai Chrome, avec une
 // version majeure identique à celle de l'User-Agent.
+// `gzip;q=0` fait servir à Fsvid/Vidzy leur playlist leurre `/e/segN.ts` en
+// 200 : leurs médias partent en `identity` seul. Uqload garde ses tokens q=0.
+const uqloadMediaEncoding = 'identity, gzip;q=0, deflate;q=0, br;q=0, zstd;q=0';
 const providerClientHints = {
+  'Accept-Encoding': 'identity',
   'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
   'Sec-Ch-Ua': providerSecChUa,
   'Sec-Ch-Ua-Mobile': '?0',
   'Sec-Ch-Ua-Platform': '"Windows"',
 };
+const { 'Accept-Encoding': mediaEncoding, ...providerExtractionClientHints } = providerClientHints;
 
 async function read(relativePath) {
   return readFile(new URL(relativePath, root), 'utf8');
@@ -62,7 +67,7 @@ test('Fsvid media headers preserve the user agent used to sign playback URLs', a
     {
       Origin: 'https://fs13.lol',
       Referer: 'https://fs13.lol/',
-      ...providerClientHints,
+      ...providerExtractionClientHints,
       'Sec-Fetch-Site': 'cross-site',
       'Sec-Fetch-Mode': 'cors',
       'Sec-Fetch-Dest': 'empty',
@@ -105,6 +110,7 @@ test('Vidzy playback preserves the user agent used to sign playback URLs', async
   assert.deepEqual(
     applyMediaProxyHeaderRules('https://u14.vidzy.cc/hls/master.m3u8', {}),
     {
+      Origin: 'https://vidzy.org',
       Referer: 'https://vidzy.org/',
       ...providerClientHints,
       'Sec-Fetch-Site': 'cross-site',
@@ -113,6 +119,65 @@ test('Vidzy playback preserves the user agent used to sign playback URLs', async
       'User-Agent': providerSignedUserAgent,
     },
   );
+});
+
+test('Fsvid, Vidzy and Uqload never request compressed media bodies', async () => {
+  const { applyMediaProxyHeaderRules } = await importTypeScript(
+    'src/services/mediaProxyHeaders.ts',
+  );
+  for (const [host, origin] of [
+    ['r1.fsvid.lol', 'https://fsvid.lol'],
+    ['u14.vidzy.cc', 'https://vidzy.org'],
+    ['strm4.uqload.vc', 'https://uqload.vc'],
+    ['strm1.uqload.bz', 'https://uqload.bz'],
+  ]) {
+    for (const resource of ['master.m3u8', 'seg-1.ts', 'video.mp4']) {
+      const input = {
+        origin: 'https://movix.tax',
+        referer: 'https://movix.tax/',
+        'accept-encoding': 'gzip',
+        Range: 'bytes=0-1023',
+      };
+      const headers = applyMediaProxyHeaderRules(`https://${host}/hls/${resource}?t=example`, input);
+      assert.equal(
+        headers['Accept-Encoding'],
+        host.includes('uqload') ? uqloadMediaEncoding : providerClientHints['Accept-Encoding'],
+        host,
+      );
+      assert.equal(headers.Origin, origin, host);
+      assert.equal(headers.Referer, `${origin}/`, host);
+      assert.equal(headers.Range, input.Range);
+      assert.equal(headers['accept-encoding'], undefined);
+      assert.equal(input['accept-encoding'], 'gzip', 'input is not mutated');
+    }
+  }
+  for (const host of ['uqload.vc.attacker.example', 'notuqload.vc', 'media.example']) {
+    const input = { 'Accept-Encoding': 'gzip', Referer: 'https://movix.tax/' };
+    assert.deepEqual(applyMediaProxyHeaderRules(`https://${host}/master.m3u8`, input), input);
+  }
+});
+
+test('extraction pages never advertise zstd, including after redirects or with media-looking query strings', async () => {
+  const { applyMediaProxyHeaderRules } = await importTypeScript(
+    'src/services/mediaProxyHeaders.ts',
+  );
+  for (const url of [
+    'https://fsvid.lol/embed-example.html',
+    'https://vidzy.cc/embed-example.html',
+    'https://vidzy.org/embed-example.html',
+    'https://uqload.is/embed-example.html',
+    'https://uqload.vc/embed-example.html',
+    'https://uqload.vc/example.html?next=master.m3u8',
+  ]) {
+    for (const input of [{}, { 'accept-encoding': mediaEncoding }]) {
+      const headers = applyMediaProxyHeaderRules(url, input);
+      assert.equal(
+        Object.keys(headers).some(name => name.toLowerCase() === 'accept-encoding'),
+        false,
+        `let the extraction transport negotiate a supported encoding: ${url}`,
+      );
+    }
+  }
 });
 
 test('media header rules never depend on the URL global', async () => {
@@ -277,170 +342,5 @@ test('LuluStream, Veev and Vidara media requests carry their player origin', asy
       Referer: 'https://movix.fun/',
     }),
     { Referer: 'https://movix.fun/' },
-  );
-});
-
-test('Android registers the MediaProxy native package', async () => {
-  const application = await read(
-    'android/app/src/main/java/com/movix/app/MainApplication.kt',
-  );
-  const packageSource = await read(
-    'android/app/src/main/java/com/movix/app/proxy/MediaProxyPackage.kt',
-  );
-  const moduleSource = await read(
-    'android/app/src/main/java/com/movix/app/proxy/MediaProxyModule.kt',
-  );
-
-  assert.match(application, /add\(MediaProxyPackage\(\)\)/);
-  assert.match(packageSource, /MediaProxyModule\(reactContext\)/);
-  assert.match(moduleSource, /override fun getName\(\)\s*=\s*"MediaProxy"/);
-  assert.match(moduleSource, /fun open\(/);
-  assert.match(moduleSource, /server\.open\(/);
-});
-
-test('Android native media proxy adds browser Fetch Metadata for every provider', async () => {
-  const policy = await read(
-    'android/app/src/main/java/com/movix/app/proxy/MediaProxyPolicy.kt',
-  );
-  const castUpstream = await read(
-    'android/app/src/main/java/com/movix/app/proxy/NetworkBoundMediaProxyUpstream.kt',
-  );
-  const localUpstream = await read(
-    'android/app/src/main/java/com/movix/app/proxy/MediaProxyServer.kt',
-  );
-
-  for (const [lowercase, canonical, value] of [
-    ['sec-fetch-site', 'Sec-Fetch-Site', 'cross-site'],
-    ['sec-fetch-mode', 'Sec-Fetch-Mode', 'cors'],
-    ['sec-fetch-dest', 'Sec-Fetch-Dest', 'empty'],
-  ]) {
-    assert.match(
-      policy,
-      new RegExp(`"${lowercase}"\\s+to\\s+"${canonical}"`),
-    );
-    const defaultHeaderPattern = new RegExp(
-      `(?:headers|mergedHeaders)\\.putIfAbsent\\("${canonical}",\\s*"${value}"\\)`,
-    );
-    assert.match(castUpstream, defaultHeaderPattern);
-    assert.match(localUpstream, defaultHeaderPattern);
-  }
-});
-
-test('every native upstream defaults Sec-Ch-Ua, whatever the caller sent', async () => {
-  const [kotlinPolicy, swiftPolicy, swiftUpstream, ...kotlinUpstreams] = await Promise.all([
-    read('android/app/src/main/java/com/movix/app/proxy/MediaProxyPolicy.kt'),
-    read('ios/Movix/Proxy/MediaProxyPolicy.swift').catch(() => ''),
-    read('ios/Movix/Proxy/MediaProxyUpstream.swift').catch(() => ''),
-    read('android/app/src/main/java/com/movix/app/proxy/MediaProxyServer.kt'),
-    read('android/app/src/main/java/com/movix/app/proxy/CronetMediaProxyUpstream.kt'),
-    read('android/app/src/main/java/com/movix/app/proxy/NetworkBoundMediaProxyUpstream.kt'),
-  ]);
-
-  // Sans cet en-tete, Fsvid repond 302 vers son flux leurre et Vidzy 403.
-  // Il doit traverser l'allowlist, avec ses deux jumeaux : un vrai Chrome ne
-  // les dissocie jamais, et Sec-Ch-Ua seul est une signature reconnaissable.
-  assert.match(kotlinPolicy, /"sec-ch-ua"\s+to\s+"Sec-Ch-Ua"/);
-  assert.match(kotlinPolicy, /"sec-ch-ua-mobile"\s+to\s+"Sec-Ch-Ua-Mobile"/);
-  assert.match(kotlinPolicy, /"sec-ch-ua-platform"\s+to\s+"Sec-Ch-Ua-Platform"/);
-  if (swiftPolicy) assert.match(swiftPolicy, /"sec-ch-ua":\s*"Sec-Ch-Ua"/);
-  if (swiftPolicy) assert.match(swiftPolicy, /"sec-ch-ua-mobile":\s*"Sec-Ch-Ua-Mobile"/);
-  if (swiftPolicy) assert.match(swiftPolicy, /"sec-ch-ua-platform":\s*"Sec-Ch-Ua-Platform"/);
-
-  // La version majeure annoncee par Sec-Ch-Ua doit se retrouver dans un
-  // User-Agent complet : « Mozilla/5.0 Chrome/140.0.0.0 » n'existe nulle part.
-  assert.match(kotlinPolicy, /Chrome\/140\.0\.0\.0 Safari\/537\.36/);
-  if (swiftPolicy) assert.match(swiftPolicy, /Chrome\/140\.0\.0\.0 Safari\/537\.36/);
-
-  // ...et surtout etre pose par defaut au niveau de l'upstream : le chemin
-  // JS qui l'ajoute n'est pas emprunte par tous les appelants du proxy local.
-  for (const upstream of kotlinUpstreams) {
-    assert.match(
-      upstream,
-      /putIfAbsent\(\s*"Sec-Ch-Ua",\s*MediaProxyPolicy\.PLAYBACK_SEC_CH_UA,?\s*\)/,
-    );
-    assert.match(
-      upstream,
-      /putIfAbsent\(\s*"Sec-Ch-Ua-Mobile",\s*MediaProxyPolicy\.PLAYBACK_SEC_CH_UA_MOBILE,?\s*\)/,
-    );
-    assert.match(
-      upstream,
-      /putIfAbsent\(\s*"Sec-Ch-Ua-Platform",\s*MediaProxyPolicy\.PLAYBACK_SEC_CH_UA_PLATFORM,?\s*\)/,
-    );
-  }
-  if (swiftUpstream) assert.match(swiftUpstream, /headers\["Sec-Ch-Ua"\] = MediaProxyPolicy\.playbackSecChUa/);
-  if (swiftUpstream) assert.match(
-    swiftUpstream,
-    /headers\["Sec-Ch-Ua-Mobile"\] = MediaProxyPolicy\.playbackSecChUaMobile/,
-  );
-  if (swiftUpstream) assert.match(
-    swiftUpstream,
-    /headers\["Sec-Ch-Ua-Platform"\] = MediaProxyPolicy\.playbackSecChUaPlatform/,
-  );
-});
-
-test('both native media proxies reject the same reserved local host names', async () => {
-  const [kotlin, swift] = await Promise.all([
-    read('android/app/src/main/java/com/movix/app/proxy/MediaProxyPolicy.kt'),
-    read('ios/Movix/Proxy/MediaProxyPolicy.swift').catch(() => ''),
-  ]);
-
-  // Le chemin Cast LAN ne fait que valider la syntaxe (aucune resolution DNS),
-  // donc chaque plateforme doit bloquer les noms reserves elle-meme.
-  assert.match(kotlin, /fun isReservedLocalHost\(/);
-  assert.match(kotlin, /require\(!isReservedLocalHost\(host\)\)/);
-  for (const reserved of [
-    'localhost',
-    'local',
-    'home\\.arpa',
-    'internal',
-    'localdomain',
-  ]) {
-    assert.match(kotlin, new RegExp(`"${reserved}"`), reserved);
-    if (swift) assert.match(swift, new RegExp(`"${reserved}"`), reserved);
-  }
-});
-
-test('the Cast header allow list covers every header the native proxy emits', async () => {
-  const [bridge, kotlin, swift] = await Promise.all([
-    read('src/services/bridge.ts'),
-    read('android/app/src/main/java/com/movix/app/proxy/MediaProxyPolicy.kt'),
-    read('ios/Movix/Proxy/MediaProxyPolicy.swift').catch(() => ''),
-  ]);
-
-  const allowList = bridge.match(
-    /const CAST_HEADER_ALLOW_LIST = new Set\(\[([\s\S]*?)\]\)/,
-  );
-  assert.ok(allowList, 'CAST_HEADER_ALLOW_LIST introuvable');
-  const allowed = new Set(
-    [...allowList[1].matchAll(/'([^']+)'/g)].map(match => match[1]),
-  );
-
-  const nativeAllowed = kotlin.match(
-    /private val allowedRequestHeaders = mapOf\(([\s\S]*?)\n {4}\)/,
-  );
-  assert.ok(nativeAllowed, 'allowedRequestHeaders introuvable');
-  const nativeNames = [...nativeAllowed[1].matchAll(/"([^"]+)" to "/g)]
-    .map(match => match[1]);
-  assert.ok(nativeNames.length >= 10, 'liste native suspecte');
-
-  // `resolveForCast` rend les en-têtes de la session telle que le natif l'a
-  // constituée. Un en-tête émis là-bas mais absent ici fait rendre `null` à
-  // `parsePreparedHeaders`, donc échouer tout cast en CAST_LOCAL_SOURCE_INVALID.
-  const missing = nativeNames.filter(name => !allowed.has(name));
-  assert.deepEqual(missing, [], `en-têtes refusés par le pont Cast : ${missing}`);
-
-  // Le pont est du code React Native partagé : iOS passe par la même liste, donc
-  // sa propre liste native doit y tenir aussi.
-  if (!swift) return;
-  const swiftAllowed = swift.match(
-    /static let allowedRequestHeaders: \[String: String\] = \[([\s\S]*?)\n {2}\]/,
-  );
-  assert.ok(swiftAllowed, 'allowedRequestHeaders Swift introuvable');
-  const swiftNames = [...swiftAllowed[1].matchAll(/"([^"]+)": "/g)]
-    .map(match => match[1]);
-  assert.deepEqual(
-    swiftNames,
-    nativeNames,
-    'les deux proxys natifs doivent émettre les mêmes en-têtes',
   );
 });

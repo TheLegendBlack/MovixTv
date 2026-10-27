@@ -14,7 +14,7 @@ import { useEffect, useState } from 'react';
  */
 
 export interface TvPlaybackIssue {
-  code: 'drm' | 'audio-codec' | 'decode';
+  code: 'drm' | 'audio-codec' | 'decode' | 'interrupted';
   message: string;
 }
 
@@ -81,6 +81,19 @@ export function useTvPlaybackDiagnostic({
     if (!video) return;
 
     const onError = () => {
+      // Erreur après plusieurs secondes de lecture : la source a été lue, ce
+      // n'est donc ni un DRM ni un format inconnu, mais une coupure du flux
+      // (segment manquant chez l'hébergeur, Lanterns, 17/10/2026). Le lecteur
+      // tente de repartir juste après ; le message s'efface s'il y parvient.
+      if (video.currentTime > 5) {
+        setIssue({
+          code: 'interrupted',
+          message:
+            'La vidéo s’est interrompue : un morceau manque chez l’hébergeur. ' +
+            'Reprise juste après… Si ça recommence, change de source.',
+        });
+        return;
+      }
       // MEDIA_ERR_SRC_NOT_SUPPORTED sur une source chiffrée : sans CDM, le
       // navigateur ne distingue pas « format inconnu » de « protégé ».
       const code = video.error?.code;
@@ -106,15 +119,18 @@ export function useTvPlaybackDiagnostic({
     // Le codec audio n'est connu qu'une fois le palier choisi : on regarde à
     // chaque changement de métadonnées plutôt qu'une seule fois au montage.
     const onMetadata = () => setIssue(current => current ?? audioCodecIssue(hlsRef.current));
+    const onPlaying = () => setIssue(current => (current?.code === 'interrupted' ? null : current));
 
     video.addEventListener('error', onError);
     video.addEventListener('loadedmetadata', onMetadata);
     video.addEventListener('canplay', onMetadata);
+    video.addEventListener('playing', onPlaying);
 
     return () => {
       video.removeEventListener('error', onError);
       video.removeEventListener('loadedmetadata', onMetadata);
       video.removeEventListener('canplay', onMetadata);
+      video.removeEventListener('playing', onPlaying);
     };
   }, [enabled, videoRef, hlsRef]);
 

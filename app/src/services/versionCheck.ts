@@ -1,5 +1,6 @@
 import { UPDATE_CHECK } from '../config';
-import { getLocalVersionCode } from './apkInstaller';
+import { getLocalVersionCode, getSupportedAbis } from './apkInstaller';
+import { pickApkFields, type ApkVariant } from './apkVariant';
 
 export type ReleaseNotes = {
   fr: string;
@@ -15,6 +16,8 @@ export type Manifest = {
   mandatory: boolean;
   releasedAt: string;
   releaseNotes: ReleaseNotes;
+  /** Variantes par processeur, facultatives (absentes du manifeste gratuit). */
+  apks?: Partial<Record<string, ApkVariant>>;
 };
 
 export type VersionCheckResult =
@@ -101,7 +104,10 @@ export async function fetchLatestVersion(
   }
 
   if (manifest.buildNumber > localCode) {
-    return { kind: 'update-available', remote: manifest };
+    // Mise à jour automatique : l'APK du processeur de la télé (~20 Mo de moins)
+    // quand le manifeste en propose un, sinon l'universel (26/10/2026).
+    const abis = await getSupportedAbis();
+    return { kind: 'update-available', remote: pickApkFields(manifest, abis) };
   }
   return { kind: 'up-to-date' };
 }

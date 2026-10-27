@@ -25,6 +25,7 @@ import java.security.MessageDigest
  *
  * Expose :
  * - getVersionCode / getVersionName : lecture BuildConfig (comparaison avec manifest)
+ * - getSupportedAbis : processeurs de l'appareil (choix de la variante d'APK)
  * - canInstallApks / openInstallSettings : permission "Sources inconnues"
  * - enqueueDownload / queryDownload / cancelDownload : wrapper DownloadManager
  * - computeSha256 : hash d'un fichier local (pour vérif avant install)
@@ -45,6 +46,18 @@ class UpdateModule(private val reactContext: ReactApplicationContext) :
     @ReactMethod
     fun getVersionName(promise: Promise) {
         promise.resolve(BuildConfig.VERSION_NAME_STR)
+    }
+
+    /**
+     * Processeurs de l'appareil, du préféré au moins bon (`Build.SUPPORTED_ABIS`) :
+     * le manifeste de mise à jour propose une variante d'APK par processeur
+     * (26/10/2026), la première connue de l'appareil est téléchargée.
+     */
+    @ReactMethod
+    fun getSupportedAbis(promise: Promise) {
+        val abis = Arguments.createArray()
+        Build.SUPPORTED_ABIS.forEach { abis.pushString(it) }
+        promise.resolve(abis)
     }
 
     // --- Install permission ----------------------------------------------

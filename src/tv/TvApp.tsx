@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { TvLayout } from './TvLayout';
 import TvHome from './TvHome';
@@ -10,7 +10,18 @@ import TvMovies from './TvMovies';
 import TvSeries from './TvSeries';
 import TvAnimes from './TvAnimes';
 import TvKeyEntry from './settings/TvKeyEntry';
+import TvMovixLink from './settings/TvMovixLink';
+import TvWelcome, { shouldWelcome } from './TvWelcome';
 import { EDITION_ROUTES } from './edition';
+
+/**
+ * L'accueil, ou d'abord le premier lancement (`TvWelcome`) sur une
+ * installation neuve. Poussé et non remplacé : Retour ramène à l'accueil.
+ */
+const TvHomeRoute: React.FC = () => {
+  const [welcome] = useState(shouldWelcome);
+  return welcome ? <Navigate to="/tvapp/welcome" /> : <TvHome />;
+};
 
 /**
  * Racine de l'interface téléviseur, montée sur `/tvapp/*`.
@@ -22,10 +33,12 @@ import { EDITION_ROUTES } from './edition';
 const TvApp: React.FC = () => (
   <TvLayout>
     <Routes>
-      <Route path="/" element={<TvHome />} />
+      <Route path="/" element={<TvHomeRoute />} />
+      <Route path="/welcome" element={<TvWelcome />} />
       <Route path="/search" element={<TvSearch />} />
       <Route path="/settings" element={<TvSettings />} />
       <Route path="/settings/key/:kind" element={<TvKeyEntry />} />
+      <Route path="/settings/movix" element={<TvMovixLink />} />
       {/* Routes propres à l'édition : voir `edition.tsx`. */}
       {EDITION_ROUTES.map(route => (
         <Route key={route.path} path={route.path} element={route.element} />

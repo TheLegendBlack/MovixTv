@@ -331,6 +331,9 @@ internal class OkHttpMediaProxyUpstream(
         val mergedHeaders = linkedMapOf<String, String>()
         mergedHeaders.putAll(MediaProxyPolicy.sanitizeRequestHeaders(target.headers))
         mergedHeaders.putAll(MediaProxyPolicy.sanitizeLocalRequestHeaders(localRequestHeaders))
+        MediaProxyPolicy.playbackAcceptEncoding(target.upstreamUrl)?.let {
+            mergedHeaders["Accept-Encoding"] = it
+        }
         mergedHeaders.putIfAbsent("Sec-Ch-Ua", MediaProxyPolicy.PLAYBACK_SEC_CH_UA)
         mergedHeaders.putIfAbsent(
             "Sec-Ch-Ua-Mobile",

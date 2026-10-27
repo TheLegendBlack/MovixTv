@@ -52,6 +52,14 @@ export interface TvMediaDetails {
   /** Titre en image, quand il existe. Voir `pickLogo` pour la sélection. */
   logoUrl: string | null;
   genres: string[];
+  /**
+   * De quoi reconnaître un animé (genre Animation, origine japonaise, chinoise
+   * ou coréenne) et le chercher sur Anime-Sama sous son titre d'origine.
+   */
+  genreIds: number[];
+  originalTitle: string | null;
+  originalLanguage: string | null;
+  originCountry: string[];
   /** Déjà formatée pour l'affichage, ex. « 1 h 52 ». Films uniquement. */
   runtime: string | null;
   seasons: TvSeason[];
@@ -94,6 +102,10 @@ interface TmdbDetailsResponse {
   runtime?: number;
   number_of_seasons?: number;
   genres?: Array<{ id: number; name: string }>;
+  original_title?: string;
+  original_name?: string;
+  original_language?: string;
+  origin_country?: string[];
   created_by?: Array<{ name?: string }>;
   seasons?: Array<{
     season_number: number;
@@ -248,6 +260,10 @@ export async function fetchMediaDetails(
     posterPath: data.poster_path ?? null,
     logoUrl: pickLogo(data.images?.logos),
     genres: (data.genres ?? []).map(genre => genre.name),
+    genreIds: (data.genres ?? []).map(genre => genre.id),
+    originalTitle: data.original_name || data.original_title || null,
+    originalLanguage: data.original_language ?? null,
+    originCountry: data.origin_country ?? [],
     runtime: formatRuntime(data.runtime),
     seasons,
     seasonCount: data.number_of_seasons ?? seasons.length,

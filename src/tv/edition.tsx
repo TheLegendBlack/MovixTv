@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import type { NavigateFunction } from 'react-router-dom';
 import { defaultPageRows, type ResolvedPageRows, type TvPageId } from './data/pages';
 import type { SettingsEntry } from './settings/settingsEntry';
+import type { TvWelcomeLinkStep } from './settings/TvLinkPanel';
 
 /**
  * Édition MovixTv : l'application gratuite, sans personnalisation ni compte.
@@ -27,3 +28,6 @@ export function useEditionSettingsEntries(_navigate: NavigateFunction): Settings
 
 /** Logo de la barre de navigation, à gauche : le nom de l'application. */
 export const EditionLogo: React.FC = () => <span className="text-[22px] font-black tracking-tight">Movix TV</span>;
+
+/** Pas d'étape propre à l'édition au premier lancement. */
+export const EDITION_WELCOME_STEP: TvWelcomeLinkStep | null = null;

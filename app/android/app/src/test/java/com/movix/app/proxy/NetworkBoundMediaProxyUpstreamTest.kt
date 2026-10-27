@@ -138,6 +138,39 @@ class NetworkBoundMediaProxyUpstreamTest {
         }
     }
 
+    @Test
+    fun preservesTheProviderEncodingProfileAndByteRanges() {
+        for (host in listOf("r1.fsvid.lol", "u14.vidzy.cc", "strm4.uqload.vc", "strm1.uqload.bz")) {
+            val binding = FakeNetworkBinding(
+                RecordingSocketFactory(),
+                mapOf(host to listOf(publicAddress())),
+            )
+            NetworkBoundMediaProxyUpstream(
+                network = binding,
+                exchange = NetworkHttpExchange { _, request ->
+                    assertEquals(
+                        if (host.contains("uqload")) {
+                            "identity, gzip;q=0, deflate;q=0, br;q=0, zstd;q=0"
+                        } else {
+                            "identity"
+                        },
+                        request.header("Accept-Encoding"),
+                    )
+                    assertEquals("bytes=0-1023", request.header("Range"))
+                    NetworkExchangeResponse(
+                        206, "Partial Content", mapOf("Content-Type" to "video/mp2t"),
+                        ByteArrayInputStream(byteArrayOf(0x47)), request.url.toString(),
+                    )
+                },
+            ).use { upstream ->
+                upstream.execute(
+                    MediaProxyTarget("https://$host/seg-1.ts?t=signed", "GET", emptyMap()),
+                    mapOf("Range" to "bytes=0-1023", "Accept-Encoding" to "gzip"),
+                ).use { assertEquals(206, it.statusCode) }
+            }
+        }
+    }
+
     private fun publicAddress(): InetAddress =
         InetAddress.getByAddress(byteArrayOf(93, 184.toByte(), 216.toByte(), 34))
 }

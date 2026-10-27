@@ -531,6 +531,17 @@ const isMP4Source = (url: string): boolean => {
   const normalizedUrl = normalizeUqloadEmbedUrl(url);
   const lowerUrl = normalizedUrl.toLowerCase();
 
+  // Un manifeste HLS n'est jamais un MP4, même quand son chemin contient
+  // `.mp4` (`…/video.mp4/master.m3u8`, `,.mp4.urlset/master.m3u8`, relayé ou
+  // non). Pris pour un MP4, il partait dans la balise <video> : le lecteur HLS
+  // de Chromium, qui ne saute pas un segment manquant, s'arrêtait net au
+  // premier trou (Lanterns, Edenwood, 17/10/2026) là où hls.js passe outre.
+  let decodedUrl = lowerUrl;
+  try { decodedUrl = decodeURIComponent(lowerUrl); } catch { /* URL mal encodée */ }
+  if (/\.m3u8(?:$|[?#&/])/.test(decodedUrl)) {
+    return false;
+  }
+
   // Direct MP4 detection
   if (lowerUrl.endsWith('.mp4') || lowerUrl.includes('.mp4?')) {
     return true;
@@ -951,6 +962,19 @@ interface HLSPlayerProps {
   onNextEpisode?: (seasonNumber: number, episodeNumber: number) => void;
   movieId?: string;  // ID TMDB du film
   tvShowId?: string; // ID TMDB de la série
+  /**
+   * Clé de progression imposée. Le lecteur Anime-Sama lit dans un autre
+   * découpage que TMDB : « saison 2, épisode 3 » n'y est pas le même épisode,
+   * il ne doit donc pas écrire dans `progress_tv_<id>_s2_e3`.
+   */
+  progressKey?: string;
+  /**
+   * Épisode TMDB dont on cherche l'intro et le générique, quand il n'est pas
+   * `tvShowId`/`seasonNumber`/`episodeNumber` : le lecteur Anime-Sama lit le
+   * même épisode dans un autre découpage (26/10/2026). Ne sert qu'aux segments,
+   * pas aux sources ni au titre.
+   */
+  segmentEpisode?: { tvShowId: string; seasonNumber: number; episodeNumber: number } | null;
   seasonNumber?: number;
   episodeNumber?: number;
   subtitleUrl?: string; // Optional subtitle URL
@@ -1229,6 +1253,8 @@ const HLSPlayer = forwardRef<HLSPlayerRef, HLSPlayerProps>(({
   onNextEpisode,
   movieId,
   tvShowId,
+  progressKey,
+  segmentEpisode,
   seasonNumber,
   episodeNumber,
   onEnded,
@@ -2459,6 +2485,8 @@ const HLSPlayer = forwardRef<HLSPlayerRef, HLSPlayerProps>(({
   // moment instead of restarting from 0. Reset only when the actual
   // movie/episode identity changes.
   const lastKnownTimeRef = useRef<number>(0);
+  /** Reprises après une coupure en cours de lecture, par source (3 au plus). */
+  const midPlaybackRecoveryRef = useRef<{ src: string; count: number }>({ src: '', count: 0 });
   const lastEpisodeKeyRef = useRef<string>('');
 
   const restoreLocalPlayback = useCallback(() => {
@@ -7574,6 +7602,7 @@ const HLSPlayer = forwardRef<HLSPlayerRef, HLSPlayerProps>(({
   };
 
   const getProgressKey = useCallback(() => {
+    if (progressKey) return progressKey;
     if (movieId) {
       return `progress_${movieId}`;
     }
@@ -7581,7 +7610,7 @@ const HLSPlayer = forwardRef<HLSPlayerRef, HLSPlayerProps>(({
       return `progress_tv_${tvShowId}_s${seasonNumber}_e${episodeNumber}`;
     }
     return null;
-  }, [movieId, tvShowId, seasonNumber, episodeNumber]);
+  }, [progressKey, movieId, tvShowId, seasonNumber, episodeNumber]);
 
   /**
    * Métadonnées d'affichage de la reprise de lecture.
@@ -7965,10 +7994,10 @@ const HLSPlayer = forwardRef<HLSPlayerRef, HLSPlayerProps>(({
     refresh: refreshSegments,
     loading: segmentsLoading,
   } = useMediaSegments({
-    tvShowId,
+    tvShowId: segmentEpisode?.tvShowId ?? tvShowId,
     movieId,
-    seasonNumber,
-    episodeNumber,
+    seasonNumber: segmentEpisode?.seasonNumber ?? seasonNumber,
+    episodeNumber: segmentEpisode?.episodeNumber ?? episodeNumber,
     duration,
     currentTime,
     playbackStarted,
@@ -9312,6 +9341,31 @@ const HLSPlayer = forwardRef<HLSPlayerRef, HLSPlayerProps>(({
         if (mediaError && !isStale()) {
           console.log(`Video error detected: ${mediaError.code} - ${mediaError.message}`);
 
+          // Coupure en pleine lecture d'un flux confié à la balise <video> : un
+          // segment manquant chez l'hébergeur (trou de 2,5 s à 15:20, Lanterns,
+          // Edenwood, 17/10/2026) arrête le lecteur de Chromium, qui refuse de
+          // le sauter. On recharge la même source un peu plus loin avant de
+          // conclure à une panne : 3, 6 puis 9 s après le point de rupture.
+          const failedAt = lastKnownTimeRef.current;
+          const recovery = midPlaybackRecoveryRef.current;
+          if (recovery.src !== src) {
+            recovery.src = src;
+            recovery.count = 0;
+          }
+          if (failedAt > 5 && recovery.count < 3 && isMp4SourceResolved(src) && !activeKisskhSourceRef.current) {
+            recovery.count += 1;
+            const resumeAt = failedAt + 3 * recovery.count;
+            console.warn(`⏭️ media error at ${failedAt.toFixed(1)}s, reloading from ${resumeAt.toFixed(1)}s (attempt ${recovery.count}/3)`);
+            target.addEventListener('loadedmetadata', () => {
+              const end = Number.isFinite(target.duration) ? target.duration - 1 : resumeAt;
+              try { target.currentTime = Math.min(resumeAt, end); } catch { /* média non seekable */ }
+              safePlay(target).catch(() => undefined);
+            }, { once: true });
+            target.src = normalizeUqloadEmbedUrl(src);
+            target.load();
+            return;
+          }
+
           if (activeKisskhSourceRef.current) {
             const handledByKisskh = await requestKisskhMediaFallback();
             if (handledByKisskh || isStale()) return;
@@ -9374,7 +9428,7 @@ const HLSPlayer = forwardRef<HLSPlayerRef, HLSPlayerProps>(({
         }
       };
     }
-  }, [src, disableCrossOrigin, requestHlsFallback, requestKisskhMediaFallback, omegaSources, coflixSources]);
+  }, [src, disableCrossOrigin, requestHlsFallback, requestKisskhMediaFallback, omegaSources, coflixSources, isMp4SourceResolved]);
 
   // Son sans image : un MP4 dont le codec vidéo n'est pas décodable (HEVC sur
   // un PC sans décodeur matériel, typiquement SwiftFlux) ne lève aucune

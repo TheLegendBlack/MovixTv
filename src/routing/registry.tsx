@@ -21,7 +21,8 @@ export const getProviderCatalogScope = (pathname: string): string | null => {
  * Les routes du site téléviseur. Le registre du site souris (63 routes) a été
  * réduit le 15/09/2026 à ce que la TV atteint réellement : son interface, sa
  * page de diagnostic, et les deux pages de lecture vers lesquelles elle
- * navigue (`/watch/movie/…` et `/watch/tv/…`).
+ * navigue (`/watch/movie/…`, `/watch/tv/…` et, pour un animé lu dans le
+ * découpage Anime-Sama, `/watch/anime/…`).
  *
  * `/tvapp/diag` doit rester déclaré à part : la page de diagnostic porte sa
  * propre sonde de navigation et ne doit pas être montée sous le moteur de
@@ -31,6 +32,8 @@ export const getProviderCatalogScope = (pathname: string): string | null => {
 export const ROUTES: RouteEntry[] = [
   { path: '/watch/movie/:tmdbid',                   loader: lz(() => import('../pages/Watch/WatchMovie')) },
   { path: '/watch/tv/:tmdbid/s/:season/e/:episode', loader: lz(() => import('../pages/Watch/WatchTv')) },
+  // Découpage Anime-Sama (onglet de la fiche d'un animé) : entrée et épisode en base 1.
+  { path: '/watch/anime/:tmdbid/:entry/:episode',  loader: lz(() => import('../pages/Watch/WatchAnimeSama')) },
   { path: '/tvapp/diag',                            loader: lz(() => import('../tv/TvDiagnosticsPage')) },
   { path: '/tvapp/*',                               loader: lz(() => import('../tv/TvApp')) },
 ];

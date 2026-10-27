@@ -18,6 +18,18 @@ const PROVIDER_SEC_CH_UA_MOBILE = '?0';
 const PROVIDER_SEC_CH_UA_PLATFORM = '"Windows"';
 const PROVIDER_ACCEPT_LANGUAGE = 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7';
 
+// Uqload : q=0 demande un corps non compressé, lisible aussi par les
+// transports natifs qui ne décodent pas zstd. Même valeur dans server.py et
+// MediaProxyPolicy.kt. Réservé aux médias : les pages HTML renvoient du zstd
+// même avec q=0.
+const PROVIDER_MEDIA_ACCEPT_ENCODING =
+  'identity, gzip;q=0, deflate;q=0, br;q=0, zstd;q=0';
+// Fsvid/Vidzy, eux, servent leur playlist leurre (`/e/segN.ts`, la « vidéo
+// troll ») en 200 dès que `gzip;q=0` figure dans la requête — mesuré le
+// 2026-10-15. `identity` seul donne le vrai flux, toujours non compressé.
+const FSVID_VIDZY_MEDIA_ACCEPT_ENCODING = 'identity';
+const PROVIDER_MEDIA_PATH = /\.(?:m3u8|mpd|mp4|m4v|m4s|ts|aac|m4a|vtt|srt|key)$/i;
+
 // User-Agent émis par l'extraction LuluStream/Veev/Vidara. Volontairement
 // tronqué : c'est celui de l'extracteur et du relais Python, et pour ces trois
 // hébergeurs c'est l'identité rejouée qui compte, pas sa vraisemblance.
@@ -80,11 +92,6 @@ const CLIENT_HINT_HEADERS = [
   'Sec-Ch-Ua-Mobile',
   'Sec-Ch-Ua-Platform',
 ] as const;
-
-function hasHeader(headers: Record<string, string>, name: string): boolean {
-  const lowered = name.toLowerCase();
-  return Object.keys(headers).some(existing => existing.toLowerCase() === lowered);
-}
 
 function getHeader(
   headers: Record<string, string>,
@@ -163,8 +170,9 @@ export function applyMediaProxyHeaderRules(
     || hostname.endsWith('.vidzy.org')
     || hostname === 'vidzy.cc'
     || hostname.endsWith('.vidzy.cc');
+  const uqloadRoot = /(?:^|\.)(uqload\.[a-z]{2,24})$/.exec(hostname)?.[1];
   const providerOrigin = providerOriginFor(hostname);
-  if (!isFsvidHost && !isVidzyHost && !providerOrigin) {
+  if (!isFsvidHost && !isVidzyHost && !uqloadRoot && !providerOrigin) {
     return headers;
   }
 
@@ -175,10 +183,11 @@ export function applyMediaProxyHeaderRules(
     setCanonicalHeader(headers, 'Origin', origin);
     setCanonicalHeader(headers, 'Referer', `${origin}/`);
   } else if (isVidzyHost) {
-    // Le CDN Vidzy renvoie 403 sans Referer sur un de ses domaines.
-    if (!hasHeader(headers, 'Referer')) {
-      setCanonicalHeader(headers, 'Referer', 'https://vidzy.org/');
-    }
+    setCanonicalHeader(headers, 'Origin', 'https://vidzy.org');
+    setCanonicalHeader(headers, 'Referer', 'https://vidzy.org/');
+  } else if (uqloadRoot) {
+    setCanonicalHeader(headers, 'Origin', `https://${uqloadRoot}`);
+    setCanonicalHeader(headers, 'Referer', `https://${uqloadRoot}/`);
   } else if (providerOrigin) {
     setCanonicalHeader(headers, 'Origin', providerOrigin);
     setCanonicalHeader(headers, 'Referer', `${providerOrigin}/`);
@@ -211,6 +220,19 @@ export function applyMediaProxyHeaderRules(
     // — or ces hébergeurs classent leurs clients, et le même essai depuis un
     // vrai Chromium donne l'inverse : en-tête présent, lecture 200 ; en-tête
     // vide, refus.
+    if (PROVIDER_MEDIA_PATH.test(url.split(/[?#]/, 1)[0])) {
+      setCanonicalHeader(
+        headers,
+        'Accept-Encoding',
+        isFsvidHost || isVidzyHost
+          ? FSVID_VIDZY_MEDIA_ACCEPT_ENCODING
+          : PROVIDER_MEDIA_ACCEPT_ENCODING,
+      );
+    } else {
+      // Laisser React Native négocier gzip pour les pages d'extraction : son
+      // transport ne décode pas zstd et le parseur recevrait des octets binaires.
+      deleteHeader(headers, 'Accept-Encoding');
+    }
     setCanonicalHeader(headers, 'Accept-Language', PROVIDER_ACCEPT_LANGUAGE);
     setCanonicalHeader(headers, 'Sec-Ch-Ua', PROVIDER_SEC_CH_UA);
     setCanonicalHeader(headers, 'Sec-Ch-Ua-Mobile', PROVIDER_SEC_CH_UA_MOBILE);

@@ -100,6 +100,9 @@ internal class NetworkBoundMediaProxyUpstream(
         val headers = linkedMapOf<String, String>()
         headers.putAll(MediaProxyPolicy.sanitizeRequestHeaders(target.headers))
         headers.putAll(MediaProxyPolicy.sanitizeLocalRequestHeaders(localRequestHeaders))
+        MediaProxyPolicy.playbackAcceptEncoding(target.upstreamUrl)?.let {
+            headers["Accept-Encoding"] = it
+        }
         headers.putIfAbsent("Sec-Ch-Ua", MediaProxyPolicy.PLAYBACK_SEC_CH_UA)
         headers.putIfAbsent(
             "Sec-Ch-Ua-Mobile",

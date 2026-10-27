@@ -57,8 +57,9 @@ import { fetchRowPage, metaLine, searchTvMedia, type TvMediaItem } from './data/
  * grille d'en face.
  *
  * TMDB (`search/multi`) apparie par début de mot : « NARU » ne trouve rien,
- * « NARUT » trouve Naruto. C'est mesuré et sans contournement côté client ; on
- * le dit à l'écran, sans plus.
+ * « NARUT » trouve Naruto. Les suggestions IMDb, ajoutées le 26/10/2026
+ * (`data/imdbSearch.ts`), complètent le début des mots dans le shell ; ailleurs
+ * TMDB reste seul, d'où la note à l'écran.
  */
 
 const RESULTS_SCOPE = 'resultats';

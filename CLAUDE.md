@@ -156,11 +156,17 @@ public/favicon.png           # seule icône déclarée (8 Ko) : la WebView tél�
 - **Reprise du dépôt amont** (https://github.com/movixstream/MovixOpenSource,
   nouvelle adresse depuis 10/2026) : fusion à trois voies fichier par fichier
   (`git merge-file`), base = dernier commit amont déjà intégré, jamais une
-  copie brute. Dernier commit intégré : **`8402e33`** (14/10/2026), le
-  14/10/2026 : seul `userscript/movix.user.js` nous concernait (décodeur
-  Fsvid/Vidzy, `d326f22`), puis `npm run build:userscript` et un APK.
-  Sauvegardes d'avant fusion : `.tv-backup/avant-maj-amont-2026-10/` (fusion
-  de `0e7cd86`, 11/10/2026) et `.tv-backup/maj-amont-d326f22/`.
+  copie brute. Dernier commit intégré : **`5005ba1`** (26/10/2026) :
+  userscript 1.7.5 (clé `gk` de Fsvid/Vidzy, sinon 403 après 9 à 19 segments ;
+  domaines VOE d'Anime-Sama), `hosterRegistry.ts`, et tout le proxy natif
+  (`app/android/.../proxy/`, `mediaProxyHeaders.ts`) aligné sur l'amont :
+  Cronet pour Fsvid/Vidzy, `Accept-Encoding: identity` contre leur vidéo
+  leurre, Uqload par OkHttp. Notre proxy datait d'avant `ff56b3c` (20/09) :
+  ce n'était pas une divergence voulue. `app-tv/` (appli TV native de l'amont,
+  Kotlin) ne se fusionne pas : on s'en inspire. Puis `npm run build:userscript`
+  et un APK. Sauvegardes d'avant fusion : `.tv-backup/maj-amont-5005ba1/`,
+  `.tv-backup/avant-maj-amont-2026-10/` (fusion de `0e7cd86`, 11/10/2026) et
+  `.tv-backup/maj-amont-d326f22/`.
   Gardés volontairement à notre version : `vite.config.ts` (service worker,
   bundle legacy, Sentry du site web), `ErrorBoundary.tsx` (la version amont
   tire `@sentry/react`, trop lourd pour le SoC), `AdFreePlayerAds.tsx` (jamais
@@ -178,6 +184,73 @@ public/favicon.png           # seule icône déclarée (8 Ko) : la WebView tél�
   React d'un bouton. Toute lecture de test réécrit `progress_*` dans
   `localStorage` : noter la valeur avant, la remettre après.
 - Ne rien lancer en tâche de fond qui occupe 8081 ou 3000.
+
+## Anime-Sama, source des animés (15/10/2026)
+
+- Source de plus du lecteur de séries pour une œuvre Animation d'origine
+  japonaise, chinoise ou coréenne (`utils/animeSamaSource.ts`) : l'API Movix
+  (`/anime/search/<titre>`) rend le catalogue d'Anime-Sama ; l'œuvre est
+  retrouvée par les modules de l'amont (`animeMatcher.ts`, `searchUtils.ts`,
+  repris tels quels), l'épisode par son rang (`animeSamaMapping.ts`, pur,
+  testé), seulement là où les découpages de saisons s'emboîtent. Sinon, pas
+  de source plutôt qu'un mauvais épisode.
+- Lecteurs jouables : ceux d'ansembed (Vidmoly), résolus par le userscript ;
+  la résolution serveur VIP n'en résout pas d'autres. Passe d'extraction
+  `anime-sama`, catégorie `anime` ; fichiers `anime-sama.*/videos/*.mp4` en mp4.
+- Mesuré le 15/10/2026 sur la page Animés : 34 animés sur 40 trouvés, 24
+  avec au moins une saison sûre ; 5 des 11 animés sans aucune source
+  (PurStream compris) en gagnent une.
+- **Mode Anime-Sama** : onglet « Anime-Sama » de la fiche d'un animé trouvé
+  (saisons, films, OAV tels qu'Anime-Sama les découpe), lecture par
+  `/watch/anime/:tmdbid/:entrée/:épisode` (`WatchAnimeSama.tsx`, base 1) avec
+  les seules sources Anime-Sama. Progression à part,
+  `progress_as_<id>_<entrée>_<épisode>` (prop `progressKey` de `HLSPlayer`) :
+  « saison 2, épisode 3 » n'y est pas l'épisode TMDB. La rangée Reprendre, la
+  synchronisation du compte et le serveur reconnaissent ces clés. La fiche
+  rouvre sur l'onglet du dernier découpage lu (`data/animeSamaMode.ts`).
+  Mêmes épisodes, autre découpage : l'onglet emprunte à TMDB image, titre,
+  durée et résumé de chaque épisode (`locateTmdbEpisode`, sens inverse de la
+  correspondance ; Frieren : saison 2 épisode 1 Anime-Sama = S1E29 TMDB),
+  le lecteur l'image de l'épisode pour la carte Reprendre.
+- **Un épisode, une seule progression** : chaque lecteur fond la clé de
+  l'autre chemin dans la sienne avant de lire (`mergeEpisodeProgress`, la
+  plus récente gagne, l'autre disparaît) ; « Reprendre » de la fiche suit le
+  découpage regardé en dernier. Sinon le même épisode avait deux cartes.
+
+## Repris de l'appli TV native de Movix (26/10/2026)
+
+L'amont a sorti une appli Android TV native (`app-tv/`, Kotlin, Compose for
+TV, Media3) ; on n'en reprend pas le code, mais ces idées :
+
+- **Recherche** (`data/imdbSearch.ts`) : suggestions d'imdb.com
+  (`v3.sg.media-imdb.com`, sans clé, ni CORS : passées par l'action
+  `PROXY_HTTP` du userscript, donc seulement dans le shell), converties par
+  TMDB `/find`, fusionnées : titre exact connu, puis connus (≥ 10 votes pour
+  IMDb, ≥ 50 pour TMDB), puis le reste. Délai 3 s, pause de 10 min après deux
+  échecs. Hors du shell, TMDB seul.
+- **Se connecter avec Movix** (`movixLink.ts`, `settings/TvMovixLink.tsx`,
+  depuis Clé VIP Movix) : `api.movix.men/api/tv/link/start|poll`, code de
+  5 caractères et QR vers movix.luxe/tv ; à la confirmation, la clé VIP du
+  profil (`vip.accessKey` si `vip.active`) est gardée telle quelle, le jeton
+  de session Movix jamais. Origines acceptées le 26/10/2026 : notre
+  domaine hébergé et localhost:3000 (une autre reçoit 404).
+- **Premier lancement** (`TvWelcome.tsx`, `/tvapp/welcome`) : version
+  préférée VF ou VOSTFR (`preferredVersion.ts`, ordre des langues des
+  préférences de sources), connexion Movix, puis l'étape de l'édition
+  (`EDITION_WELCOME_STEP`, `null` dans l'édition gratuite).
+  Seulement sur une télé neuve (ni clé VIP ni `progress_*`), une fois
+  (`movix:tv:welcome`). Pas d'étape langue : les écrans TV sont en français.
+- **Composants communs** : `useLinkFlow.ts` (code, interrogation, `slow_down`,
+  trois renouvellements), `components/TvLinkCode.tsx` (QR en SVG, sans
+  canvas), `settings/TvLinkPanel.tsx`.
+- **Lecture** : un manifeste `.m3u8` n'est jamais pris pour un MP4 (il
+  partait dans le lecteur HLS de Chromium, qui ne saute pas un segment
+  manquant : Lanterns, 17/10/2026) ; une erreur après 5 s de lecture directe
+  recharge la source 3, 6 puis 9 s plus loin avant de changer de source, et
+  le message dit « Lecture interrompue », plus « DRM ». En mode Anime-Sama,
+  le lecteur cherche intro et générique sur l'épisode TMDB (`segmentEpisode`).
+- Non repris : le lecteur natif (Media3 + FFmpeg pour AC-3/E-AC-3/DTS) ;
+  il demanderait de sortir la lecture de la WebView.
 
 ## Couleurs, rangées, réglages (10/2026)
 

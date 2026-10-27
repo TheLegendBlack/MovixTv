@@ -4,6 +4,8 @@ import { getTmdbApiKey } from '@/config/tmdbKey';
 // Registre des rangées et listes par page : `rowRegistry.ts`, module pur que
 // le site de personnalisation importe aussi, sans axios ni traductions.
 import { TV_HOME_ROWS, findRowSpec, type RowSpec, type TvRowLayoutName } from './rowRegistry';
+import { fetchFromExtension, isExtensionAvailable } from '@/utils/extensionProxy';
+import { imdbSlug, imdbSuggestionUrl, imdbTitleIds, rankSearchResults } from './imdbSearch';
 export {
   TV_ANIME_ROWS,
   TV_HOME_ROWS,
@@ -100,6 +102,8 @@ interface TmdbResult {
   first_air_date?: string;
   media_type?: string;
   genre_ids?: number[];
+  vote_count?: number;
+  adult?: boolean;
 }
 
 const image = (path: string | null | undefined, size: string): string | null =>
@@ -339,12 +343,97 @@ export async function fetchTvHomeRows(signal?: AbortSignal): Promise<TvRowData[]
   return rows;
 }
 
+/** Une suggestion IMDb ne doit jamais faire attendre la grille plus que ça. */
+const IMDB_TIMEOUT_MS = 3000;
+/** Deux échecs de suite : IMDb est en panne ou bloqué, on s'en passe 10 min. */
+const IMDB_PAUSE_MS = 10 * 60_000;
+let imdbMisses = 0;
+let imdbPausedUntil = 0;
+/** Saisies récentes : effacer une lettre puis la retaper ne relance rien. */
+const imdbIdsCache = new Map<string, string[]>();
+/** IMDb → TMDB déjà convertis (`null` : absent de TMDB ou sans affiche). */
+const imdbToTmdbCache = new Map<string, TmdbResult | null>();
+
+function remember<V>(cache: Map<string, V>, key: string, value: V, max: number): void {
+  cache.delete(key);
+  cache.set(key, value);
+  if (cache.size > max) cache.delete(cache.keys().next().value as string);
+}
+
+function decodeBase64Utf8(base64: string): string {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return new TextDecoder().decode(bytes);
+}
+
+/**
+ * Suggestions IMDb, par le userscript du shell : `v3.sg.media-imdb.com` ne
+ * répond pas aux en-têtes CORS (vérifié le 26/10/2026), la page ne peut donc
+ * pas l'appeler elle-même. Hors du shell (navigateur de bureau), rien.
+ */
+async function imdbIdsFor(query: string): Promise<string[]> {
+  const slug = imdbSlug(query);
+  if (!slug || Date.now() < imdbPausedUntil || !isExtensionAvailable()) return [];
+  const cached = imdbIdsCache.get(slug);
+  if (cached) return cached;
+  try {
+    const response = await Promise.race([
+      fetchFromExtension<{ data?: string; status?: number }>('PROXY_HTTP', { url: imdbSuggestionUrl(slug) }),
+      new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error('IMDb : délai dépassé')), IMDB_TIMEOUT_MS)),
+    ]);
+    if (!response?.data || (response.status ?? 200) >= 400) throw new Error(`IMDb ${response?.status ?? '?'}`);
+    const ids = imdbTitleIds(JSON.parse(decodeBase64Utf8(response.data)));
+    imdbMisses = 0;
+    remember(imdbIdsCache, slug, ids, 40);
+    return ids;
+  } catch (error) {
+    console.warn('[TvSearch] suggestions IMDb indisponibles', error);
+    imdbMisses += 1;
+    if (imdbMisses >= 2) {
+      imdbMisses = 0;
+      imdbPausedUntil = Date.now() + IMDB_PAUSE_MS;
+    }
+    return [];
+  }
+}
+
+/** La fiche TMDB d'un titre IMDb (`/find`), titre et affiche dans la langue du site. */
+async function tmdbFromImdb(imdbId: string, signal?: AbortSignal): Promise<TmdbResult | null> {
+  const key = `${getTmdbLanguage()}:${imdbId}`;
+  if (imdbToTmdbCache.has(key)) return imdbToTmdbCache.get(key) ?? null;
+  const { data } = await axios.get<{ movie_results?: TmdbResult[]; tv_results?: TmdbResult[] }>(
+    `${TMDB_BASE}/find/${imdbId}`,
+    { params: { api_key: TMDB_API_KEY, language: getTmdbLanguage(), external_source: 'imdb_id' }, signal },
+  );
+  const found = [
+    ...(data.movie_results ?? []).map(result => ({ ...result, media_type: 'movie' })),
+    ...(data.tv_results ?? []).map(result => ({ ...result, media_type: 'tv' })),
+  ].find(result => !result.adult && result.poster_path) ?? null;
+  remember(imdbToTmdbCache, key, found, 300);
+  return found;
+}
+
+async function imdbPopular(query: string, signal?: AbortSignal): Promise<TmdbResult[]> {
+  const ids = await imdbIdsFor(query);
+  const results = await Promise.all(ids.map(id => tmdbFromImdb(id, signal).catch(() => null)));
+  return results.filter((result): result is TmdbResult => result !== null);
+}
+
+const rankable = (result: TmdbResult) => ({
+  key: `${result.media_type}:${result.id}`,
+  title: result.title || result.name || '',
+  votes: result.vote_count ?? 0,
+  result,
+});
+
 /**
  * Recherche multi (films + séries).
  *
  * `search/multi` renvoie aussi des personnes : on les écarte, une fiche
  * d'acteur n'ayant rien à lire. Les entrées sans affiche sont retirées comme
- * ailleurs — une carte vide n'aide personne à choisir.
+ * ailleurs — une carte vide n'aide personne à choisir. Les suggestions IMDb,
+ * lancées en parallèle, mettent les titres connus en tête (`imdbSearch.ts`).
  */
 export async function searchTvMedia(
   query: string,
@@ -353,6 +442,7 @@ export async function searchTvMedia(
   const trimmed = query.trim();
   if (trimmed.length === 0) return [];
 
+  const popular = imdbPopular(trimmed, signal);
   const response = await axios.get<{ results?: TmdbResult[] }>(
     `${TMDB_BASE}/search/multi`,
     {
@@ -366,8 +456,10 @@ export async function searchTvMedia(
     },
   );
 
-  return (response.data.results ?? [])
-    .filter(result => result.media_type === 'movie' || result.media_type === 'tv')
-    .map(result => toMediaItem(result, 'movie'))
+  const found = (response.data.results ?? [])
+    .filter(result => result.media_type === 'movie' || result.media_type === 'tv');
+  const ranked = rankSearchResults(trimmed, (await popular).map(rankable), found.map(rankable));
+  return ranked
+    .map(({ result }) => toMediaItem(result, 'movie'))
     .filter((item): item is TvMediaItem => item !== null);
 }

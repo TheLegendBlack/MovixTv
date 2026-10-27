@@ -47,6 +47,59 @@ android {
         buildConfig true
     }
 
+    // APK par processeur (26/10/2026) : en plus de l'APK universel (premier
+    // téléchargement, l'utilisateur ne connaît pas son processeur), une variante
+    // par ABI, ~20 Mo au lieu de ~38, que les mises à jour automatiques préfèrent.
+    // Même versionCode pour toutes : pas de Play Store, donc pas besoin du
+    // décalage par ABI, et l'APK universel comme les variantes se remplacent.
+    // Réservé aux tâches release : le build debug garde ses quatre ABI (émulateurs).
+    // AGP refuse `ndk.abiFilters` avec les splits ; la restriction aux deux ABI ARM
+    // de l'APK universel passe donc par `packaging` (voir plus bas).
+    def releaseBuild = gradle.startParameter.taskNames.any { it.toLowerCase().contains("release") }
+    splits {
+        abi {
+            enable releaseBuild
+            reset()
+            include "armeabi-v7a", "arm64-v8a"
+            universalApk true
+        }
+    }
+    if (releaseBuild) {
+        packaging {
+            jniLibs {
+                excludes += ["**/x86/**", "**/x86_64/**"]
+            }
+        }
+    }
+
+    signingConfigs {
+        release {
+            if (keystoreProperties['MOVIX_RELEASE_STORE_FILE']) {
+                storeFile file(keystoreProperties['MOVIX_RELEASE_STORE_FILE'])
+                storePassword keystoreProperties['MOVIX_RELEASE_STORE_PASSWORD']
+                keyAlias keystoreProperties['MOVIX_RELEASE_KEY_ALIAS']
+                keyPassword keystoreProperties['MOVIX_RELEASE_KEY_PASSWORD']
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+            signingConfig keystoreProperties['MOVIX_RELEASE_STORE_FILE'] ? signingConfigs.release : signingConfigs.debug
+            // Téléviseurs et boîtiers Android sont ARM : 64 bits pour les
+            // récents et puissants, 32 bits pour l'entrée de gamme (l'Edenwood).
+            // x86 et x86_64 ne servaient qu'aux émulateurs (et au Nexus Player,
+            // arrêté en 2018) : 29 Mo sur 67,5 de l'APK, mesuré le 14/10/2026.
+            // Le filtrage se fait par `splits.abi` et `packaging` (plus haut) et non
+            // par `ndk.abiFilters`, incompatible avec les splits.
+        }
+    }
+
     signingConfigs {
         release {
             if (keystoreProperties['MOVIX_RELEASE_STORE_FILE']) {
